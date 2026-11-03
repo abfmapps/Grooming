@@ -1,6 +1,4 @@
 node_modules/
-.next/
-.env*.local
-*.db
-data/
-*.tsbuildinfo
+.DS_Store
+dev/data.json
+dev/photos/
