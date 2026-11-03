@@ -2,8 +2,8 @@
 
 Two free apps for the **Al Bonian FM Grooming, Etiquette & Work Efficiency Policy**, built like ABFM Training: plain web pages on GitHub Pages that install on phones like an app.
 
-- **Checklist app** (supervisors, FM Managers, Camp Boss, Site Managers): `https://abfmapps.github.io/grooming/`
-- **Management dashboard** (Director, OCO, HSE, HR, Stores, FM Managers): `https://abfmapps.github.io/grooming/admin.html`
+- **Checklist app** (supervisors, FM Managers, Camp Boss, Site Managers): `https://abfmapps.github.io/Grooming/`
+- **Management dashboard** (Director, OCO, HSE, HR, Stores, FM Managers): `https://abfmapps.github.io/Grooming/admin.html`
 
 Everyone logs in with a **username and PIN**. The app sends each person to the right place for their role; FM Managers can use both and only see their own sites.
 
