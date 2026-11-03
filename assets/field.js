@@ -58,11 +58,11 @@
 
   function tabs(page) {
     const t = [
-      ["#/", "Today", "🏠", page === ""], ["#/check/" + mainType(), "Staff", "✅", page === "check" || page === "submit"],
-      ["#/supply", "Supply", "📦", page === "supply"], ["#/training", "Training", "🎓", page === "training" || page === "baseline"],
-      F.user.manage ? ["admin.html", "Dashboard", "📊", false] : ["#/logout", "Log out", "↩︎", false],
+      ["#/", "Today", "home", page === ""], ["#/check/" + mainType(), "Checks", "checklist", page === "check" || page === "submit"],
+      ["#/supply", "Supply", "box", page === "supply"], ["#/training", "Training", "cap", page === "training" || page === "baseline"],
+      F.user.manage ? ["admin.html", "Dashboard", "chart", false] : ["#/incident", "Report", "megaphone", page === "incident"],
     ];
-    return `<div class="m-tabs"><nav>${t.map(([h, l, i, on]) => `<a href="${h}" class="${on ? "on" : ""}"><span class="ic">${i}</span>${l}</a>`).join("")}</nav></div>`;
+    return `<div class="m-tabs"><nav>${t.map(([h, l, i, on]) => `<a href="${h}" class="${on ? "on" : ""}">${G.icon(i)}${l}</a>`).join("")}</nav></div>`;
   }
 
   // ---------------- data helpers ----------------
@@ -80,7 +80,7 @@
     if (!c) return `<span class="pill grey">To check</span>`;
     const n = c.gaps.filter((g) => !g.supply).length;
     return {
-      pass: `<span class="pill green">✓ Pass</span>`, gaps: `<span class="pill red">${plural(n, "gap")}</span>`,
+      pass: `<span class="pill green">Pass</span>`, gaps: `<span class="pill red">${plural(n, "gap")}</span>`,
       supply: `<span class="pill blue">Supply gap</span>`, absent: `<span class="pill amber">Absent</span>`, leave: `<span class="pill grey">On leave</span>`,
     }[c.status];
   }
@@ -107,25 +107,38 @@
     const nowHM = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Dubai", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date());
     const overdue = !sub && nowHM > T.checklistDue;
     const openInc = F.incidents.filter((x) => x.status !== "closed").length;
+    const can = (t) => types().includes(t);
+    const row = (href, ico, tone, title, sub, end, disabled) => `<a href="${href}" class="task" ${disabled ? 'aria-disabled="true"' : ""}><div class="ico ${tone}">${G.icon(ico)}</div><div class="grow"><b>${title}</b><span>${sub}</span></div>${end}</a>`;
+    const chev = `<span class="chev">${G.icon("chevron")}</span>`;
+    const status = mt !== "site" ? "Check everyone before they leave the accommodation"
+      : sub ? `Sent to Head Office at ${esc(sub.time)}${sub.time > T.checklistDue ? " (late)" : ""}`
+      : overdue ? `<b>Overdue: the checklist was due at ${esc(T.checklistDue)}</b>` : `Send to Head Office by ${esc(T.checklistDue)}`;
     return `
       <div class="hero">
-        <div class="logo-row"><div class="hi">${greet}</div><a href="#/logout" class="small" style="opacity:.7">Log out</a></div>
+        <div class="logo-row"><img src="assets/logo.png" alt="Al Bonian FM"><a href="#/logout">${G.icon("logout")}Log out</a></div>
+        <div class="hi">${greet}</div>
         <h1>${esc(F.user.name)}</h1>
-        <select id="site-pick" aria-label="Site">${F.sites.map((s) => `<option value="${s.id}" ${s.id === F.site ? "selected" : ""}>📍 ${esc(s.name)} · ${esc(S.roleLabel(F.user.role))}</option>`).join("")}</select>
-        <div class="prog">
-          <div class="ring" style="background:conic-gradient(var(--orange) 0 ${p}%, rgba(255,255,255,.18) ${p}% 100%)"><div>${checked}/${staff.length}</div></div>
-          <div><div style="font-weight:600">${fmtDay(F.today)}</div>
-            <div class="small" style="opacity:.8;margin-top:3px">${checked} of ${staff.length} staff checked<br>${mt === "site" ? (sub ? `Checklist sent at ${esc(sub.time)}${sub.time > T.checklistDue ? " (late)" : ""}` : overdue ? `<b style="color:#ffb59a">⚠ Checklist overdue (due ${esc(T.checklistDue)})</b>` : `Checklist due by ${esc(T.checklistDue)}`) : "Camp check before staff leave"}</div></div>
+        <label class="site-select">${G.icon("pin")}<select id="site-pick" aria-label="Site">${F.sites.map((s) => `<option value="${s.id}" ${s.id === F.site ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label>
+        <div class="progress">
+          <div class="row between"><div class="big">${checked}<small> of ${staff.length} checked</small></div><div class="muted small">${fmtDay(F.today)}</div></div>
+          <div class="track"><i class="${p === 100 ? "done" : ""}" style="width:${p}%"></i></div>
+          <div class="sub">${status}</div>
         </div>
       </div>
       <div class="m-body">
-        ${types().includes("site") ? `<a href="#/check/site" class="card task"><div class="ico" style="background:var(--orange-soft)">✅</div><div class="grow"><b>Site check</b><span>${left ? `${left} staff left to check` : "Everyone checked"}</span></div>${left ? `<span class="chev">›</span>` : `<span class="pill green">Done</span>`}</a>` : ""}
-        <a href="#/check/camp" class="card task" aria-disabled="${!types().includes("camp")}"><div class="ico" style="background:var(--blue-soft)">🏠</div><div class="grow"><b>Camp check</b><span>${camp ? `${camp} of ${staff.length} checked by the Camp Boss` : "Not done yet today"}</span></div>${camp >= staff.length && staff.length ? `<span class="pill green">Done</span>` : types().includes("camp") ? `<span class="chev">›</span>` : ""}</a>
-        ${types().includes("field") ? `<a href="#/check/field" class="card task"><div class="ico" style="background:var(--amber-soft)">🔧</div><div class="grow"><b>Random field check</b><span>${field} done in the last 7 days (target ${T.fieldChecksPerWeek})</span></div>${field >= T.fieldChecksPerWeek ? `<span class="pill green">On target</span>` : `<span class="chev">›</span>`}</a>` : ""}
-        <a href="#/incident" class="card task"><div class="ico" style="background:var(--navy);color:#fff">📣</div><div class="grow"><b>Report an incident</b><span>${openInc ? `${plural(openInc, "open incident")} at this site` : "Difficult customer, complaint, serious conduct"}</span></div><span class="chev">›</span></a>
-        <a href="#/supply" class="card task"><div class="ico" style="background:var(--red-soft)">📦</div><div class="grow"><b>Supply gaps</b><span>${F.supply.length ? `${plural(F.supply.length, "item")} waiting from Stores` : "Nothing waiting"}</span></div><span class="chev">›</span></a>
-        ${types().includes("site") ? (sub ? `<a href="#/submit" class="btn ghost block mt-s">✓ Sent to Head Office at ${esc(sub.time)}. View</a>` : `<a href="#/submit" class="btn block mt-s ${left ? "ghost" : "navy"}">${left ? "Submit to Head Office (finish checks first)" : "Submit to Head Office"}</a>`) : ""}
-        <p class="muted small mt" style="text-align:center"><a href="#/refresh">↻ Refresh</a></p>
+        <div class="group-label">Today's checks</div>
+        <div class="list">
+          ${can("site") ? row("#/check/site", "checklist", "brand", "Site check", left ? `${left} of ${staff.length} still to check` : "Everyone checked", left ? chev : `<span class="pill green">Done</span>`) : ""}
+          ${row("#/check/camp", "bed", "info", "Camp check", camp ? `${camp} of ${staff.length} checked before leaving` : "Not done yet today", camp >= staff.length && staff.length ? `<span class="pill green">Done</span>` : can("camp") ? chev : "", !can("camp"))}
+          ${can("field") ? row("#/check/field", "walk", "warn", "Random field check", `${field} in the last 7 days · target ${T.fieldChecksPerWeek}`, field >= T.fieldChecksPerWeek ? `<span class="pill green">On target</span>` : chev) : ""}
+        </div>
+        <div class="group-label">Report</div>
+        <div class="list">
+          ${row("#/incident", "megaphone", openInc ? "bad" : "", "Report an incident", openInc ? `${plural(openInc, "open incident")} at this site` : "Difficult customer, complaint, serious conduct", chev)}
+          ${row("#/supply", "box", F.supply.length ? "warn" : "", "Supply gaps", F.supply.length ? `${plural(F.supply.length, "item")} waiting from Stores` : "Nothing waiting", chev)}
+        </div>
+        ${can("site") ? (sub ? `<a href="#/submit" class="btn ghost block mt">${G.icon("check")}Sent at ${esc(sub.time)} · view</a>` : `<a href="#/submit" class="btn block mt ${left ? "ghost" : ""}">${left ? "Finish the checks, then send to Head Office" : "Send to Head Office"}</a>`) : ""}
+        <p class="muted small mt" style="text-align:center"><a href="#/refresh" class="blue">${G.icon("refresh")} Refresh</a></p>
       </div>`;
   }
 
@@ -149,18 +162,18 @@
     const link = (o) => `#/check/${type}?` + new URLSearchParams({ f, ...(term ? { q: term } : {}), ...o });
     return `
       <div class="m-top">
-        <a href="#/" class="back">‹ Today</a>
+        <a href="#/" class="back">${G.icon("back")}Today</a>
         <h1>${S.CHECK_TYPES[type].label} · ${esc(site().name)}</h1>
         <div class="muted small">${S.CHECK_TYPES[type].who}</div>
         ${types().length > 1 ? `<div class="chips mt-s">${types().map((t) => `<a href="#/check/${t}" class="chip ${t === type ? "on" : ""}">${S.CHECK_TYPES[t].short}</a>`).join("")}</div>` : ""}
-        <input class="search" type="search" id="search" value="${esc(q.q || "")}" placeholder="🔍  Search name, staff ID or trade" data-type="${type}" data-f="${f}">
+        <div class="search-wrap">${G.icon("search")}<input class="search" type="search" id="search" value="${esc(q.q || "")}" placeholder="Search name, staff number or trade" data-type="${type}" data-f="${f}"></div>
         <div class="chips mt-s">${["all", "todo", "gaps", "pass"].map((k) => `<a href="${link({ f: k })}" class="chip ${f === k ? "on" : ""}">${{ all: "All", todo: "To check", gaps: "Gaps", pass: "Pass" }[k]} ${counts[k]}</a>`).join("")}</div>
       </div>
       <div class="m-body">
         ${q.saved ? `<div class="flash ok">Saved: ${esc(q.saved)}</div>` : ""}
         ${type === "field" ? `<div class="flash info">Pick technicians at random while they are working. Target: 3 per site per week.</div>` : ""}
         ${shown.length === 0 ? `<p class="muted">${F.staff.length ? "No one matches." : "No staff on this site yet. Ask HR or the administrator to add them."}</p>` : `
-        <div class="card emp-list">${shown.map((e) => `
+        <div class="list emp-list">${shown.map((e) => `
           <a href="#/check/${type}/${e.id}" class="emp"><div class="avatar">${initials(e.name)}</div>
             <div class="grow"><b>${esc(e.name)}</b><span>${esc(e.staff_no)} · ${esc(e.trade)}</span></div>${pill(checks.get(e.id))}</a>`).join("")}
         </div>`}
@@ -185,14 +198,14 @@
     const openGaps = F.supply.filter((g) => g.employee_id === e.id);
     return `
       <div class="m-top">
-        <a href="#/check/${type}" class="back">‹ ${S.CHECK_TYPES[type].label}</a>
+        <a href="#/check/${type}" class="back">${G.icon("back")}${S.CHECK_TYPES[type].label}</a>
         <div class="row"><div class="avatar">${initials(e.name)}</div><div class="grow"><b style="font-size:16px">${esc(e.name)}</b>
           <div class="muted small">${esc(e.staff_no)} · ${esc(e.trade)}${e.uniform_size ? ` · Uniform ${esc(e.uniform_size)}` : ""}${e.shoe_size ? ` · Shoes ${esc(e.shoe_size)}` : ""}</div></div></div>
       </div>
       <div class="m-body">
         ${existing ? `<div class="flash info">Already checked today. Saving again replaces the earlier result.</div>` : ""}
-        ${prior.length ? `<div class="flash warn">⚠️ <b>${plural(prior.length, "finding")} in the last 90 days</b> (latest ${fmtDate(prior[0])}).</div>` : ""}
-        ${openGaps.length ? `<div class="flash info">📦 Waiting from Stores: ${openGaps.map((g) => `${esc(g.item)} (requested ${fmtDate(g.requested_on)})`).join(", ")}</div>` : ""}
+        ${prior.length ? `<div class="flash warn"><b>${plural(prior.length, "finding")} in the last 90 days</b> (latest ${fmtDate(prior[0])}).</div>` : ""}
+        ${openGaps.length ? `<div class="flash info">Waiting from Stores: ${openGaps.map((g) => `${esc(g.item)} (requested ${fmtDate(g.requested_on)})`).join(", ")}</div>` : ""}
         <form id="check-form">${checkFormBody(type, prior.length, openGaps)}</form>
       </div>`;
   }
@@ -210,19 +223,19 @@
     return `
       <div class="status-row">${["checked", "absent", "leave"].map((m) => `<button type="button" class="chip ${CF.mode === m ? "on" : ""}" data-mode="${m}">${{ checked: "Present", absent: "Absent", leave: "On leave" }[m]}</button>`).join("")}</div>
       ${CF.mode === "checked" ? `
-        <button type="button" class="btn ghost small mb" data-allok>✓ Mark remaining items OK</button>
+        <button type="button" class="btn ghost small mb" data-allok>${G.icon("check")}Mark remaining items OK</button>
         ${areas.map((a) => `<div class="card sec"><h4><span>${a.label}</span><span class="muted" style="letter-spacing:0">${a.points} pts</span></h4>
           ${items.filter((i) => i.area === a.code).map((i) => {
             const s = st[i.code];
             return `<div class="item">
               <div class="row"><div class="grow"><div class="lbl">${esc(i.label)}</div>${i.hint ? `<div class="hint">${esc(i.hint)}</div>` : ""}</div>
-                <div class="yn"><button type="button" aria-label="${esc(i.label)}: OK" class="y ${s.ok === true ? "on" : ""}" data-ok="${i.code}">✓</button><button type="button" aria-label="${esc(i.label)}: not OK" class="n ${s.ok === false ? "on" : ""}" data-no="${i.code}">✕</button></div></div>
+                <div class="yn"><button type="button" aria-label="${esc(i.label)}: OK" class="y ${s.ok === true ? "on" : ""}" data-ok="${i.code}">${G.icon("check")}</button><button type="button" aria-label="${esc(i.label)}: not OK" class="n ${s.ok === false ? "on" : ""}" data-no="${i.code}">${G.icon("x")}</button></div></div>
               ${s.ok === false ? `<div class="gapbox">
                 ${i.supply ? `<div class="l">IS THIS A SUPPLY GAP?</div><div class="chips">
                     <button type="button" class="chip ${!s.supply ? "on" : ""}" data-supply="${i.code}" data-v="0">No, staff not compliant</button>
                     <button type="button" class="chip ${s.supply ? "sel-blue" : ""}" data-supply="${i.code}" data-v="1">Yes, requested, not received</button></div>
                   ${s.supply ? `<label class="field mt-s" style="margin-bottom:4px">Date requested<input type="date" data-req="${i.code}" value="${s.requested}" max="${F.today}"></label>
-                    <div class="blue small">📦 Not counted against the employee. Sent to Stores.${openGaps.some((g) => g.item === i.label) ? " Already on the supply list." : ""}</div>` : ""}` : ""}
+                    <div class="blue small">Not counted against the employee. Sent to Stores.${openGaps.some((g) => g.item === i.label) ? " Already on the supply list." : ""}</div>` : ""}` : ""}
                 ${!s.supply ? `<div class="l" style="margin-top:${i.supply ? 10 : 2}px">ACTION TAKEN TODAY</div><div class="chips">${quick.map((ac) => `<button type="button" class="chip ${s.action === ac.code ? "sel-green" : ""}" data-action="${i.code}" data-v="${ac.code}">${ac.label}</button>`).join("")}</div>` : ""}
               </div>` : ""}
             </div>`;
@@ -278,9 +291,9 @@
     const sub = F.submission;
     const withGaps = c.filter((x) => x.gaps.length).map((x) => ({ x, e: F.staff.find((e) => e.id === x.employee_id) })).filter((r) => r.e).sort((a, b) => a.e.name.localeCompare(b.e.name));
     return `
-      <div class="m-top"><a href="#/" class="back">‹ Today</a><h1>Submit daily checklist</h1><div class="muted small">${esc(site().name)} · ${fmtDay(F.today)}</div></div>
+      <div class="m-top"><a href="#/" class="back">${G.icon("back")}Today</a><h1>Submit daily checklist</h1><div class="muted small">${esc(site().name)} · ${fmtDay(F.today)}</div></div>
       <div class="m-body">
-        ${q.sent ? `<div class="flash ok">✓ Sent to Head Office. You can resend if you change any check today.</div>` : sub ? `<div class="flash ok">Sent at ${esc(sub.time)} by ${esc(sub.by)}.</div>` : ""}
+        ${q.sent ? `<div class="flash ok">Sent to Head Office. You can resend if you change any check today.</div>` : sub ? `<div class="flash ok">Sent at ${esc(sub.time)} by ${esc(sub.by)}.</div>` : ""}
         <div class="stats">
           <div class="card stat"><b>${F.staff.length}</b><span>Staff on site</span></div>
           <div class="card stat"><b class="green">${c.filter((x) => x.status === "pass").length}</b><span>Passed</span></div>
@@ -288,7 +301,7 @@
           <div class="card stat"><b class="blue">${c.filter((x) => x.status === "supply").length}</b><span>Supply gap · ${c.filter((x) => ["absent", "leave"].includes(x.status)).length} absent/leave</span></div>
         </div>
         ${missing.length ? `<div class="flash warn"><b>${missing.length} not checked yet:</b> ${missing.slice(0, 6).map((e) => esc(e.name)).join(", ")}${missing.length > 6 ? "…" : ""}<div class="mt-s"><a href="#/check/site?f=todo" class="btn small">Check them now</a></div></div>` : ""}
-        ${withGaps.length ? `<div class="eyebrow" style="margin:4px 2px 8px">Gaps and action taken</div><div class="card mb">${withGaps.map(({ x, e }) => {
+        ${withGaps.length ? `<div class="eyebrow" style="margin:4px 2px 8px">Gaps and action taken</div><div class="list mb">${withGaps.map(({ x, e }) => {
           const real = x.gaps.filter((g) => !g.supply);
           const acts = [...new Set(real.map((g) => S.actionLabel(g.action)).filter(Boolean))].join(", ");
           return `<div class="gl"><div class="row between"><b>${esc(e.name)}</b>${real.length ? `<span class="pill amber">${esc(acts || "Gap")}</span>` : `<span class="pill blue">Supply gap</span>`}</div>
@@ -305,16 +318,16 @@
   function supplyPage() {
     const can = F.user.can.issueSupply;
     return `
-      <div class="m-top"><a href="#/" class="back">‹ Today</a><h1>Supply gaps · ${esc(site().name)}</h1>
+      <div class="m-top"><a href="#/" class="back">${G.icon("back")}Today</a><h1>Supply gaps · ${esc(site().name)}</h1>
         <div class="muted small">Items staff asked for but have not received. These are not counted against the staff member.</div></div>
       <div class="m-body">
-        ${F.supply.length === 0 ? `<p class="muted mb">Nothing waiting from Stores. 👍</p>` : `<div class="card mb">${F.supply.map((g) => {
+        ${F.supply.length === 0 ? `<p class="muted mb">Nothing waiting from Stores.</p>` : `<div class="list mb">${F.supply.map((g) => {
           const e = F.staff.find((x) => x.id === g.employee_id) || { name: "?" };
           const age = G.supplyAge(g, F.today);
           const size = /uniform/i.test(g.item) && e.uniform_size ? ` (size ${esc(e.uniform_size)})` : /shoe/i.test(g.item) && e.shoe_size ? ` (size ${esc(e.shoe_size)})` : "";
           return `<div class="gl"><div class="row between"><b>${esc(e.name)}</b><span class="pill ${age > T.supplyWorkingDays ? "red" : "blue"}">${plural(age, "working day")}</span></div>
             <small>${esc(g.item)}${size} · requested ${fmtDate(g.requested_on)}</small>
-            ${can ? `<button class="btn small ghost mt-s" data-issue="${g.id}">✓ Received today</button>` : ""}</div>`;
+            ${can ? `<button class="btn small ghost mt-s" data-issue="${g.id}">${G.icon("check")}Received today</button>` : ""}</div>`;
         }).join("")}</div>`}
         <details class="card sec"><summary style="padding:12px 0;font-weight:600;cursor:pointer">+ Record a new request</summary>
           <form id="supply-form" style="padding-bottom:8px">
@@ -334,15 +347,15 @@
     const based = F.staff.filter((e) => e.baseline_on).length;
     const list = [...F.staff].sort((a, b) => Number(!!a.trained_on) - Number(!!b.trained_on) || a.name.localeCompare(b.name));
     return `
-      <div class="m-top"><a href="#/" class="back">‹ Today</a><h1>Training & baseline</h1>
+      <div class="m-top"><a href="#/" class="back">${G.icon("back")}Today</a><h1>Training & baseline</h1>
         <div class="muted small">Grooming, Etiquette & Work Standards. Target: 100% of staff by ${fmtDate(T.trainingDeadline, true)}.</div>
         <div class="bar" style="height:8px"><i style="width:${p}%"></i></div><div class="small mt-s"><b>${done} of ${F.staff.length}</b> trained (${p}%) · <b>${based} of ${F.staff.length}</b> baseline checked</div></div>
       <div class="m-body">
         <div class="flash info">Run the toolbox talk with the team, then mark each person who attended. <b>Baseline:</b> record each person's sizes and the PPE they hold; missing items go to Stores.</div>
-        <div class="card emp-list">${list.map((e) => `
+        <div class="list emp-list">${list.map((e) => `
           <div class="emp"><div class="avatar">${initials(e.name)}</div><div class="grow"><b>${esc(e.name)}</b><span>${esc(e.staff_no)} · ${e.trained_on ? `Trained ${fmtDate(e.trained_on)}` : "Not trained yet"}</span>
-              <a href="#/baseline/${e.id}" class="small ${e.baseline_on ? "muted" : "blue"}" style="display:block;margin-top:2px">${e.baseline_on ? `✓ Baseline ${fmtDate(e.baseline_on)} · update` : "+ Do baseline check"}</a></div>
-            ${F.user.can.markTraining ? (e.trained_on ? `<button class="pill green" style="border:0;cursor:pointer" data-train="${e.id}" data-undo="1" title="Tap to undo">✓ Trained</button>` : `<button class="btn small" data-train="${e.id}">Mark trained</button>`) : ""}</div>`).join("")}
+              <a href="#/baseline/${e.id}" class="small ${e.baseline_on ? "muted" : "blue"}" style="display:block;margin-top:2px">${e.baseline_on ? `Baseline done ${fmtDate(e.baseline_on)} · update` : "+ Do baseline check"}</a></div>
+            ${F.user.can.markTraining ? (e.trained_on ? `<button class="pill green" style="border:0;cursor:pointer" data-train="${e.id}" data-undo="1" title="Tap to undo">Trained</button>` : `<button class="btn small" data-train="${e.id}">Mark trained</button>`) : ""}</div>`).join("")}
         </div>
       </div>`;
   }
@@ -353,7 +366,7 @@
     if (!e) return `<div class="m-body"><p class="muted">Employee not found.</p></div>`;
     const held = new Set(e.baseline_on ? e.ppe_held : []);
     return `
-      <div class="m-top"><a href="#/training" class="back">‹ Training & baseline</a>
+      <div class="m-top"><a href="#/training" class="back">${G.icon("back")}Training & baseline</a>
         <div class="row"><div class="avatar">${initials(e.name)}</div><div class="grow"><b style="font-size:16px">${esc(e.name)}</b><div class="muted small">${esc(e.staff_no)} · ${esc(e.trade)}${e.baseline_on ? ` · last baseline ${fmtDate(e.baseline_on)}` : ""}</div></div></div></div>
       <div class="m-body">
         <form id="baseline-form" data-id="${e.id}">
@@ -376,7 +389,7 @@
     const list = [...F.incidents].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
     const type = S.INCIDENT_TYPES.find((t) => t.code === q.type) || S.INCIDENT_TYPES[0];
     return `
-      <div class="m-top"><a href="#/" class="back">‹ Today</a><h1>Report an incident</h1>
+      <div class="m-top"><a href="#/" class="back">${G.icon("back")}Today</a><h1>Report an incident</h1>
         <div class="muted small">${esc(site().name)} · the FM Manager is informed straight away.</div></div>
       <div class="m-body">
         <form id="incident-form">

@@ -51,9 +51,13 @@
     incidents: incidentsPage, hr: hrPage, employees: employeesPage, supply: supplyPage, training: trainingPage, reports: reportsPage,
     activity: activityPage, settings: settingsPage,
   };
-  const nav = () => [["", "Overview"], ["analytics", "Analytics"], ["checklists", "Daily checklists"], ["audits", "Audits"], ["findings", "Findings & actions"],
-    ["incidents", "Incidents"], ["hr", "HR register"], ["employees", "Employees"], ["supply", "Supply gaps"], ["training", "Training & baseline"],
-    ["reports", "Reports & exports"], ...(D.user.can.activity ? [["activity", "Activity log"]] : []), ["settings", D.user.can.settings ? "Sites, users & rules" : "Settings"]];
+  const nav = () => [
+    ["Monitor", [["", "Overview", "home"], ["analytics", "Analytics", "trend"], ["checklists", "Daily checklists", "checklist"]]],
+    ["Follow up", [["audits", "Audits", "clipboard"], ["findings", "Findings & actions", "flag"], ["incidents", "Incidents", "megaphone"], ["hr", "HR register", "scale"]]],
+    ["People", [["employees", "Employees", "users"], ["supply", "Supply gaps", "box"], ["training", "Training & baseline", "cap"]]],
+    ["Reports", [["reports", "Reports & exports", "file"], ...(D.user.can.activity ? [["activity", "Activity log", "pulse"]] : [])]],
+    ["Admin", [["settings", D.user.can.settings ? "Sites, users & rules" : "Settings", "settings"]]],
+  ];
 
   function render() {
     const page = R.parts[0] || "";
@@ -66,8 +70,8 @@
     root.innerHTML = `
       <div class="shell">
         <aside class="side">
-          <div class="brand"><img src="assets/logo.png" alt="ABFM" class="brand-logo"><div class="eyebrow">Al Bonian FM</div><b>Grooming Control</b></div>
-          <nav class="nav">${nav().map(([p, l]) => `<a href="#/${p}" class="${page === p ? "on" : ""}"><span class="d"></span>${l}${counts[p] ? `<span class="cnt">${counts[p]}</span>` : ""}</a>`).join("")}</nav>
+          <div class="brand"><img src="assets/logo.png" alt="Al Bonian FM" class="brand-logo"><b>Grooming<br>Control</b></div>
+          <nav class="nav">${nav().map(([g, items]) => `<div class="nav-group">${g}</div>${items.map(([p, l, ic]) => `<a href="#/${p}" class="${page === p ? "on" : ""}">${G.icon(ic)}${l}${counts[p] ? `<span class="cnt ${["incidents", "hr"].includes(p) ? "hot" : ""}">${counts[p]}</span>` : ""}</a>`).join("")}`).join("")}</nav>
           <div class="user"><div class="avatar">${initials(D.user.name)}</div><div><b>${esc(D.user.name)}</b>${esc(S.roleLabel(D.user.role))}
             <div>${D.user.field ? `<a href="index.html">Checklist app</a> · ` : ""}<a href="#" data-logout>Log out</a></div></div></div>
         </aside>
@@ -84,7 +88,7 @@
   const auditScore = (t) => `<span class="nw"><span class="score" ${t < T.auditPass ? 'style="color:var(--red)"' : ""}>${t}</span> <span class="pill ${t >= T.auditPass ? "green" : "red"}">${t >= T.auditPass ? "Pass" : "Fail"}</span></span>`;
   const stripClass = (d) => (d.pct === null ? (d.sent ? "c-g" : "c-x") : !d.sent ? "c-x" : d.pct >= 100 ? "c-g" : d.pct >= 90 ? "c-g2" : d.pct >= 80 ? "c-a" : "c-r");
   const legend = `<span class="legend"><span><i class="c-g"></i>100%</span><span><i class="c-g2"></i>90–99%</span><span><i class="c-a"></i>80–89%</span><span><i class="c-r"></i>&lt;80%</span><span><i class="c-x"></i>Not sent</span></span>`;
-  const statusPill = (c) => ({ pass: `<span class="pill green">✓ Pass</span>`, gaps: `<span class="pill red">${plural(c.gaps.filter((g) => !g.supply).length, "gap")}</span>`, supply: `<span class="pill blue">Supply gap</span>`, absent: `<span class="pill amber">Absent</span>`, leave: `<span class="pill grey">On leave</span>` }[c.status]);
+  const statusPill = (c) => ({ pass: `<span class="pill green">Pass</span>`, gaps: `<span class="pill red">${plural(c.gaps.filter((g) => !g.supply).length, "gap")}</span>`, supply: `<span class="pill blue">Supply gap</span>`, absent: `<span class="pill amber">Absent</span>`, leave: `<span class="pill grey">On leave</span>` }[c.status]);
   const opts = (list, sel, blank) => (blank ? `<option value="">${blank}</option>` : "") + list.map((x) => `<option value="${x.id}" ${x.id === sel ? "selected" : ""}>${esc(x.name)}</option>`).join("");
   const staffOf = (siteId) => D.employees.filter((e) => e.active && e.site_id === siteId).sort((a, b) => a.name.localeCompare(b.name));
 
@@ -93,35 +97,34 @@
     const { rows, kpi, alerts } = G.overview(D);
     const delta = kpi.compliance != null && kpi.prev != null ? kpi.compliance - kpi.prev : null;
     return `
-      ${head(fmtDay(D.today), D.user.role === "fm_manager" ? "Overview, my sites" : "Overview, all sites", "", `<a class="btn small ghost" href="#" data-refresh>↻ Refresh</a><a class="btn small ghost" href="#/analytics">Analytics</a><a class="btn small navy" href="#/reports">Reports</a>`)}
+      ${head(fmtDay(D.today), D.user.role === "fm_manager" ? "Overview, my sites" : "Overview, all sites", "", `<a class="btn small ghost" href="#" data-refresh>${G.icon("refresh")}Refresh</a><a class="btn small ghost" href="#/analytics">Analytics</a><a class="btn small navy" href="#/reports">Reports</a>`)}
       <div class="kpis six">
-        <div class="card kpi"><div class="l">Checklists received today</div><div class="v">${kpi.sentToday}<small> / ${kpi.sites}</small></div><div class="s ${kpi.sentToday < kpi.sites ? "red" : "green"}">${kpi.sites - kpi.sentToday ? `${kpi.sites - kpi.sentToday} site(s) not sent yet` : "All sites sent"}${kpi.lateToday ? ` · ${kpi.lateToday} late` : ""}</div></div>
-        <div class="card kpi"><div class="l">Staff passing daily check (14 days)</div><div class="v">${pct(kpi.compliance, 1)}</div><div class="s ${delta == null || Math.abs(delta) < 0.05 ? "muted" : delta > 0 ? "green" : "red"}">${delta == null ? "Supply gaps count as pass" : Math.abs(delta) < 0.05 ? "No change vs previous 14 days" : `${delta > 0 ? "▲" : "▼"} ${Math.abs(delta).toFixed(1)} pts vs previous 14 days`}</div></div>
-        <div class="card kpi"><div class="l">Open audit findings</div><div class="v">${kpi.open}</div><div class="s ${kpi.overdue ? "red" : "muted"}">${kpi.overdue ? `${kpi.overdue} past the ${T.findingCloseDays}-day limit` : `Close within ${T.findingCloseDays} days`}</div></div>
-        <div class="card kpi"><div class="l">Average latest audit score</div><div class="v">${kpi.avgAudit == null ? "–" : Math.round(kpi.avgAudit)}<small> / 100</small></div><div class="s muted">Pass mark ${T.auditPass} · ${plural(kpi.below, "site")} below</div></div>
-        <div class="card kpi"><div class="l">Staff trained</div><div class="v">${pct(kpi.trained)}</div><div class="s muted">Target 100% by ${fmtDate(T.trainingDeadline)}</div><div class="bar"><i style="width:${kpi.trained || 0}%"></i></div></div>
-        <a href="#/incidents" class="card kpi"><div class="l">Open incidents</div><div class="v">${kpi.incidentsOpen}</div><div class="s muted">Reported from the field</div></a>
-        <a href="#/hr" class="card kpi"><div class="l">HR steps not recorded</div><div class="v">${kpi.hrPending}</div><div class="s ${kpi.hrPending ? "red" : "muted"}">${kpi.hrPending ? "Written warnings, refreshers, HR action" : "All up to date"}</div></a>
+        <a href="#/checklists" class="card kpi"><div class="l">Checklists today</div><div class="v">${kpi.sentToday}<small> / ${kpi.sites}</small></div><div class="s ${kpi.sentToday < kpi.sites ? "red" : "green"}">${kpi.sites - kpi.sentToday ? `${kpi.sites - kpi.sentToday} site(s) not sent yet` : "All sites sent"}${kpi.lateToday ? ` · ${kpi.lateToday} late` : ""}</div></a>
+        <div class="card kpi"><div class="l">Pass rate, 14 days</div><div class="v">${pct(kpi.compliance, 1)}</div><div class="s ${delta == null || Math.abs(delta) < 0.05 ? "muted" : delta > 0 ? "green" : "red"}">${delta == null ? "Supply gaps count as pass" : Math.abs(delta) < 0.05 ? "Same as the 14 days before" : `${delta > 0 ? "Up" : "Down"} ${Math.abs(delta).toFixed(1)} pts on the 14 days before`}</div></div>
+        <a href="#/findings" class="card kpi"><div class="l">Open audit findings</div><div class="v">${kpi.open}</div><div class="s ${kpi.overdue ? "red" : "muted"}">${kpi.overdue ? `${kpi.overdue} past the ${T.findingCloseDays}-day limit` : `Close within ${T.findingCloseDays} days`}</div></a>
+        <div class="card kpi"><div class="l">Average audit score</div><div class="v">${kpi.avgAudit == null ? "–" : Math.round(kpi.avgAudit)}<small> / 100</small></div><div class="s muted">Pass mark ${T.auditPass} · ${plural(kpi.below, "site")} below</div></div>
+        <a href="#/incidents" class="card kpi"><div class="l">Open incidents</div><div class="v">${kpi.incidentsOpen}</div><div class="s muted">Reported from site</div></a>
+        <a href="#/hr" class="card kpi"><div class="l">HR steps due</div><div class="v">${kpi.hrPending}</div><div class="s ${kpi.hrPending ? "red" : "muted"}">${kpi.hrPending ? "Not recorded yet" : "All recorded"}</div></a>
       </div>
       <div class="grid2">
         <div class="card pad panel"><h3><span>Sites</span>${legend}</h3>
           ${rows.length === 0 ? empty(`No sites yet. Add them under <a class="blue" href="#/settings">Sites & users</a>.`) : `<div class="table-wrap"><table class="t">
             <thead><tr><th>Site</th><th>FM Manager</th><th>Today</th><th>Daily compliance, last 14 days</th><th>Last audit</th><th>Open</th></tr></thead><tbody>
             ${rows.map((r) => `<tr>
-              <td><a href="#/sites/${r.site.id}"><b>${esc(r.site.name)}</b></a><br><span class="muted small">${r.staff} staff</span></td>
-              <td>${esc(r.manager) || `<span class="muted">–</span>`}</td>
-              <td><a href="#/checklists/${r.site.id}/${D.today}">${r.todayAt ? (r.todayAt > T.checklistDue ? `<span class="pill amber">✓ ${esc(r.todayAt)} late</span>` : `<span class="pill green">✓ ${esc(r.todayAt)}</span>`) : `<span class="pill ${G.nowHM() > T.checklistDue ? "red" : "grey"}">Not sent</span>`}</a></td>
+              <td class="nw"><a href="#/sites/${r.site.id}"><b>${esc(r.site.name)}</b></a><br><span class="muted small">${r.staff} staff</span></td>
+              <td class="nw">${esc(r.manager) || `<span class="muted">–</span>`}</td>
+              <td><a href="#/checklists/${r.site.id}/${D.today}">${r.todayAt ? (r.todayAt > T.checklistDue ? `<span class="pill amber">${esc(r.todayAt)} late</span>` : `<span class="pill green">${esc(r.todayAt)}</span>`) : `<span class="pill ${G.nowHM() > T.checklistDue ? "red" : "grey"}">Not sent</span>`}</a></td>
               <td><div class="strip">${r.strip.map((d) => `<i class="${stripClass(d)}" title="${fmtDate(d.date)}: ${d.sent ? (d.pct == null ? "sent" : d.pct + "%") : "not sent"}"></i>`).join("")}</div></td>
               <td>${r.lastAudit ? `<a href="#/audits/${r.lastAudit.id}">${auditScore(r.lastAudit.total)}</a>` : `<span class="muted">None yet</span>`}</td>
-              <td>${r.open}${r.overdue ? `<span class="red small"> (${r.overdue} late)</span>` : ""}</td></tr>`).join("")}
+              <td class="nw">${r.open}${r.overdue ? `<span class="red small"> · ${r.overdue} late</span>` : ""}</td></tr>`).join("")}
             </tbody></table></div>`}
         </div>
         <div class="card pad panel"><h3>Needs attention</h3>
-          ${alerts.length === 0 ? empty("Nothing needs attention. 👍") : alerts.slice(0, 12).map((a) => {
+          ${alerts.length === 0 ? empty("Nothing needs attention.") : alerts.slice(0, R.q.all ? 99 : 6).map((a) => {
             const inner = `<span class="dot ${a.level}"></span><div><b>${esc(a.title)}</b>${esc(a.detail)}</div>`;
             return a.href ? `<a href="${a.href}" class="alert">${inner}</a>` : `<div class="alert">${inner}</div>`;
           }).join("")}
-          ${alerts.length > 12 ? `<div class="muted small mt-s">+ ${alerts.length - 12} more</div>` : ""}
+          ${alerts.length > 6 && !R.q.all ? `<a class="linkbtn mt-s" style="display:inline-block" href="#/?all=1">Show all ${alerts.length}</a>` : ""}
         </div>
       </div>
       ${trendAndMissed(D.user.siteIds, 12, addDays(D.today, -29), D.today, "Most-missed standards, last 30 days")}`;
@@ -160,7 +163,7 @@
           const sub = D.submissions.find((x) => x.site_id === s.id && x.date === date);
           const n = (t) => D.checks.filter((c) => c.site_id === s.id && c.date === date && c.type === t).length;
           return `<tr class="click"><td><a href="#/checklists/${s.id}/${date}"><b>${esc(s.name)}</b></a></td>
-            <td>${sub ? `<span class="pill ${sub.time > T.checklistDue ? "amber" : "green"}">✓ ${esc(sub.time)}${sub.time > T.checklistDue ? " late" : ""} · ${esc(sub.by)}</span>` : `<span class="pill red">Not sent</span>`}</td>
+            <td>${sub ? `<span class="pill ${sub.time > T.checklistDue ? "amber" : "green"}">${esc(sub.time)}${sub.time > T.checklistDue ? " late" : ""} · ${esc(sub.by)}</span>` : `<span class="pill red">Not sent</span>`}</td>
             <td>${staffOf(s.id).length}</td><td>${n("site")}</td><td class="green">${sub ? sub.passed : "–"}</td><td class="red">${sub ? sub.gaps : "–"}</td>
             <td class="blue">${sub ? sub.supply : "–"}</td><td>${sub ? sub.absent : "–"}</td><td>${n("camp")}</td><td>${n("field")}</td></tr>`;
         }).join("")}</tbody></table></div></div>`;
@@ -187,7 +190,7 @@
               <td>${statusPill(c)}${c.finding_no ? `<div class="small muted mt-s">Finding no. ${c.finding_no}</div>` : ""}</td>
               <td class="small">${c.gaps.map((g) => esc(S.itemLabel(g.code)) + (g.supply ? " (supply gap)" : "")).join(", ")}</td>
               <td class="small">${[...new Set(c.gaps.filter((g) => !g.supply).map((g) => S.actionLabel(g.action)).filter(Boolean))].join(", ")}</td>
-              <td class="small">${esc(c.note)}${c.photo ? `<div><button class="photo-btn" data-photo="${esc(c.photo)}">📷 Show photo</button></div>` : ""}</td>
+              <td class="small">${esc(c.note)}${c.photo ? `<div><button class="photo-btn" data-photo="${esc(c.photo)}">${G.icon("camera")}Show photo</button></div>` : ""}</td>
               <td class="small nw">${esc(c.by)}<br><span class="muted">${esc(c.time)}</span></td></tr>`;
           }).join("")}</tbody></table></div></div>`;
       }).join("")}
@@ -335,7 +338,7 @@
     return `
       ${head("Follow-up", "Findings & actions", "Every audit finding is closed within 7 days. Daily-check findings build each person's warning level.")}
       <div class="card pad panel mb"><h3>Open audit actions <span class="muted small">${acts.length} open · ${acts.filter((a) => a.due_on < D.today).length} overdue</span></h3>
-        ${acts.length === 0 ? empty("No open actions. 👍") : `<div class="table-wrap"><table class="t"><thead><tr><th>Due</th><th>Site</th><th>Finding</th><th>Staff</th><th>Action</th><th>Owner</th><th>Audit</th><th></th></tr></thead><tbody>
+        ${acts.length === 0 ? empty("No open actions.") : `<div class="table-wrap"><table class="t"><thead><tr><th>Due</th><th>Site</th><th>Finding</th><th>Staff</th><th>Action</th><th>Owner</th><th>Audit</th><th></th></tr></thead><tbody>
           ${acts.map((x) => { const a = D.auditById[x.audit_id]; return `<tr>
             <td class="nw">${x.due_on < D.today ? `<span class="pill red">${fmtDate(x.due_on)} · late</span>` : fmtDate(x.due_on)}</td><td>${esc(siteName(a.site_id))}</td><td>${esc(x.finding)}</td>
             <td>${x.employee_id ? `<a class="blue" href="#/employees/${x.employee_id}">${esc(empName(x.employee_id))}</a>` : `<span class="muted">(site)</span>`}</td>
@@ -379,12 +382,12 @@
           <td class="small nw">${e.uniform_size ? `Uniform ${esc(e.uniform_size)}` : ""}${e.shoe_size ? ` · Shoes ${esc(e.shoe_size)}` : ""}</td>
           <td>${n ? `<span class="pill ${n >= 3 ? "red" : n === 2 ? "amber" : "grey"}">${n}</span>` : `<span class="muted">0</span>`}</td>
           <td class="small">${n ? S.warningFor(n + 1).action.split(";")[0].split("(")[0] : ""}</td>
-          <td>${e.trained_on ? `<span class="pill green">✓ ${fmtDate(e.trained_on)}</span>` : `<span class="pill grey">No</span>`}</td>
+          <td>${e.trained_on ? `<span class="pill green">${fmtDate(e.trained_on)}</span>` : `<span class="pill grey">No</span>`}</td>
           <td>${gaps ? `<span class="pill blue">${gaps} waiting</span>` : ""}</td><td class="small nw">${fmtDate(last)}</td></tr>`).join("")}
       </tbody></table></div></div>
       ${D.user.can.manageStaff ? `<div class="grid-half">
         <details class="card pad panel"><summary class="linkbtn" style="cursor:pointer">+ Add an employee</summary>${employeeForm({})}</details>
-        <details class="card pad panel"><summary class="linkbtn" style="cursor:pointer">⇪ Import from Excel / CSV</summary>
+        <details class="card pad panel"><summary class="linkbtn" style="cursor:pointer">${G.icon("upload")}Import from Excel / CSV</summary>
           <form id="import-form" class="mt">
             <p class="small muted mb">Columns, in this order: <b>staff number, name, trade, site, uniform size, shoe size</b>. Copy the rows from Excel and paste them here, or choose a CSV file. Existing staff numbers are updated; new site names are created.</p>
             <label class="field">CSV file<input type="file" name="file" accept=".csv,.txt"></label>
@@ -465,7 +468,7 @@
             ${by.length ? `<table class="t"><tbody>${by.map((x) => `<tr><td>${esc(x.i.label)}<span class="muted small"> · ${S.AREAS.find((a) => a.code === x.i.area).label}</span></td><td><b>${x.n}</b></td></tr>`).join("")}</tbody></table>` : `<p class="muted small">No gaps.</p>`}
           </div>
           <div class="card pad panel mb"><h3><span>Baseline</span><span class="muted small">${e.baseline_on ? `checked ${fmtDate(e.baseline_on, true)}` : "not done yet"}</span></h3>
-            ${e.baseline_on ? `<div class="chips">${S.BASELINE_ITEMS.map((i) => `<span class="pill ${e.ppe_held.includes(i.code) ? "green" : "red"}">${e.ppe_held.includes(i.code) ? "✓" : "✕"} ${esc(i.label)}</span>`).join("")}</div>${e.missing ? `<p class="small mt-s">Other missing: ${esc(e.missing)}</p>` : ""}` : `<p class="muted small">The FM Manager or supervisor records sizes and PPE held in the checklist app (Training & baseline).</p>`}
+            ${e.baseline_on ? `<div class="chips">${S.BASELINE_ITEMS.map((i) => `<span class="pill ${e.ppe_held.includes(i.code) ? "green" : "red"}">${esc(i.label)}</span>`).join("")}</div>${e.missing ? `<p class="small mt-s">Other missing: ${esc(e.missing)}</p>` : ""}` : `<p class="muted small">The FM Manager or supervisor records sizes and PPE held in the checklist app (Training & baseline).</p>`}
           </div>
           ${D.user.can.discipline ? `<details class="card pad panel mb"><summary class="linkbtn" style="cursor:pointer">+ Record an HR step</summary>${hrForm(e.id, "written", "").replace('class="card pad panel mb"', 'class="mt"')}</details>` : ""}
           ${D.user.can.manageStaff ? `<details class="card pad panel"><summary class="linkbtn" style="cursor:pointer">Edit employee details</summary>${employeeForm(e)}</details>` : ""}
@@ -482,7 +485,7 @@
       ${head("HR / Procurement / Stores", "Supply gaps", `Staff who asked for an item and have not received it are not marked non-compliant. Target: issue within ${T.supplyWorkingDays} working days.`,
         `<span class="chips"><a href="#/supply" class="chip ${issued ? "" : "on"}">Waiting</a><a href="#/supply?tab=issued" class="chip ${issued ? "on" : ""}">Issued</a></span>`)}
       ${late ? `<div class="flash warn">${plural(late, "item")} waiting longer than ${T.supplyWorkingDays} working days.</div>` : ""}
-      <div class="card pad">${list.length === 0 ? empty(issued ? "Nothing issued yet." : "Nothing waiting. 👍") : `<div class="table-wrap"><table class="t">
+      <div class="card pad">${list.length === 0 ? empty(issued ? "Nothing issued yet." : "Nothing waiting.") : `<div class="table-wrap"><table class="t">
         <thead><tr><th>Requested</th><th>Employee</th><th>Site</th><th>Item</th><th>Size</th><th>${issued ? "Issued" : "Waiting"}</th><th></th></tr></thead><tbody>
         ${list.map((g) => { const e = D.empById[g.employee_id] || {}; const age = G.supplyAge(g, D.today); return `<tr>
           <td class="nw">${fmtDate(g.requested_on)}</td><td><a class="blue" href="#/employees/${g.employee_id}">${esc(e.name)}</a><br><span class="muted small">${esc(e.staff_no)}</span></td>
@@ -511,7 +514,7 @@
         </tbody></table>
         <p class="small muted mt">Baseline checks are recorded on the phone (Training tab): sizes, PPE held and missing items. Unticked items go to Stores.</p></div>
         <div class="card pad panel"><h3><span class="chips"><a class="chip ${show === "training" ? "on" : ""}" href="#/training?show=training${site ? `&site=${site}` : ""}">Not trained</a><a class="chip ${show === "baseline" ? "on" : ""}" href="#/training?show=baseline${site ? `&site=${site}` : ""}">No baseline</a></span>${site ? `<a href="#/training?show=${show}" class="linkbtn">All sites</a>` : ""}</h3>
-          ${todo.length === 0 ? `<p class="muted">Everyone is done. 👍</p>` : `<table class="t"><tbody>${todo.map((e) => `<tr>
+          ${todo.length === 0 ? `<p class="muted">Everyone is done.</p>` : `<table class="t"><tbody>${todo.map((e) => `<tr>
             <td><a class="blue" href="#/employees/${e.id}">${esc(e.name)}</a><br><span class="muted small">${esc(e.staff_no)} · ${esc(e.trade)} · ${esc(siteName(e.site_id))}</span></td>
             <td style="text-align:right">${show === "training" && D.user.can.markTraining ? `<button class="btn small ghost" data-train="${e.id}">Mark trained</button>` : ""}</td></tr>`).join("")}</tbody></table>`}
         </div>
@@ -596,7 +599,7 @@
       </tbody></table></div></div>
       <div class="grid-half">
         <div class="card pad panel"><h3>Most-missed standards</h3>${G.barList(m.rows.slice(0, 8).map((r) => ({ label: r.label, value: r.n, display: String(r.n), tip: `${r.label}: ${r.n} of ${m.checks} checks` })))}</div>
-        <div class="card pad panel"><h3>HR steps not recorded <span class="muted small">${hr.length}</span></h3>${hr.length ? `<table class="t"><tbody>${hr.slice(0, 12).map((h) => `<tr><td><a class="blue" href="#/employees/${h.emp.id}">${esc(h.emp.name)}</a><br><span class="muted small">${esc(siteName(h.emp.site_id))}</span></td><td class="small">${h.needs.map((n) => esc(S.levelLabel(n.level))).join(", ")}</td></tr>`).join("")}</tbody></table>` : empty("All recorded. 👍")}</div>
+        <div class="card pad panel"><h3>HR steps not recorded <span class="muted small">${hr.length}</span></h3>${hr.length ? `<table class="t"><tbody>${hr.slice(0, 12).map((h) => `<tr><td><a class="blue" href="#/employees/${h.emp.id}">${esc(h.emp.name)}</a><br><span class="muted small">${esc(siteName(h.emp.site_id))}</span></td><td class="small">${h.needs.map((n) => esc(S.levelLabel(n.level))).join(", ")}</td></tr>`).join("")}</tbody></table>` : empty("All recorded.")}</div>
       </div>
       <div class="grid-half mt">
         <div class="card pad panel"><h3>Open audit actions <span class="muted small">${acts.length}</span></h3>${acts.length ? `<table class="t"><tbody>${acts.slice(0, 12).map((x) => `<tr><td class="nw ${x.due_on < D.today ? "red" : ""}">${fmtDate(x.due_on)}</td><td>${esc(siteName(D.auditById[x.audit_id].site_id))}</td><td>${esc(x.finding)}</td><td class="small">${esc(x.owner)}</td></tr>`).join("")}</tbody></table>` : empty("None open.")}</div>
@@ -632,7 +635,7 @@
         <label class="small muted">To <input type="date" name="to" value="${to}" max="${D.today}"></label>
         <select name="site">${opts(D.mySites, R.q.site || "", "All my sites")}</select></form>
       <div class="card pad"><table class="t"><tbody>
-        ${EXPORTS.map(([k, l, d]) => `<tr><td><b>${l}</b><br><span class="muted small">${d}</span></td><td style="text-align:right"><button class="btn small ghost" data-export="${k}">⬇ Download</button></td></tr>`).join("")}
+        ${EXPORTS.map(([k, l, d]) => `<tr><td><b>${l}</b><br><span class="muted small">${d}</span></td><td style="text-align:right"><button class="btn small ghost" data-export="${k}">${G.icon("download")}Download</button></td></tr>`).join("")}
       </tbody></table></div>`;
   }
   async function runExport(kind) {
@@ -711,7 +714,7 @@
         <div class="card pad panel"><h3>Audit history</h3>
           ${sa.length ? `<table class="t"><tbody>${sa.slice(0, 8).map((a) => `<tr><td class="nw"><a class="blue" href="#/audits/${a.id}">${fmtDate(a.date, true)}</a></td><td>${esc(a.auditor)}</td><td>${auditScore(a.total)}</td></tr>`).join("")}</tbody></table>` : empty("No audits yet.")}
           <h3 class="mt">Staff on a warning <span class="muted small">2+ findings in ${T.warningWindowDays} days</span></h3>
-          ${warn.length ? `<table class="t"><tbody>${warn.map(({ e, n }) => `<tr><td><a class="blue" href="#/employees/${e.id}">${esc(e.name)}</a></td><td><span class="pill ${n >= 3 ? "red" : "amber"}">${n}</span></td><td class="small">Next finding: ${n + 1 >= 3 ? "HR action" : "written warning"}</td></tr>`).join("")}</tbody></table>` : empty("None. 👍")}
+          ${warn.length ? `<table class="t"><tbody>${warn.map(({ e, n }) => `<tr><td><a class="blue" href="#/employees/${e.id}">${esc(e.name)}</a></td><td><span class="pill ${n >= 3 ? "red" : "amber"}">${n}</span></td><td class="small">Next finding: ${n + 1 >= 3 ? "HR action" : "written warning"}</td></tr>`).join("")}</tbody></table>` : empty("None.")}
           ${inc.length ? `<h3 class="mt">Open incidents</h3><table class="t"><tbody>${inc.map((x) => `<tr><td class="nw">${fmtDate(x.date)}</td><td>${esc(S.incidentLabel(x.type))}</td><td>${incidentPill(x)}</td></tr>`).join("")}</tbody></table>` : ""}
         </div>
       </div>`;
@@ -728,7 +731,9 @@
     const m = G.missedStandards(D, ids, from, to);
     const trades = G.byTrade(D, ids, from, to).filter((t) => t.checks >= 10);
     const checkers = G.checkerActivity(D, ids, from, to);
-    const weeksBySite = D.mySites.filter((s) => ids.includes(s.id)).map((s) => ({ s, w: G.weekly(D, [s.id], weeks) }));
+    let weeksBySite = D.mySites.filter((s) => ids.includes(s.id)).map((s) => ({ s, w: G.weekly(D, [s.id], weeks) }));
+    const firstWeek = weeksBySite.length ? Math.min(...weeksBySite.map((x) => { const i = x.w.findIndex((y) => y.tot > 0); return i < 0 ? x.w.length : i; })) : 0;
+    if (firstWeek > 0 && firstWeek < weeks) weeksBySite = weeksBySite.map((x) => ({ s: x.s, w: x.w.slice(firstWeek) }));   // skip weeks before any checks
     const heatCls = (p) => (p == null ? "c-x" : p >= 100 ? "c-g" : p >= 95 ? "c-g2" : p >= 85 ? "c-a" : "c-r");
     const audits = D.audits.filter((a) => ids.includes(a.site_id) && a.date >= from);
     return `
@@ -768,7 +773,7 @@
     return `
       ${head("Reported from the field", "Incidents", "Difficult customers, complaints and serious conduct. The supervisor reports the same day; the FM Manager acknowledges and closes.",
         `<span class="chips">${["open", "closed", "all"].map((k) => `<a href="#/incidents?status=${k}" class="chip ${k === st ? "on" : ""}">${k[0].toUpperCase() + k.slice(1)}</a>`).join("")}</span>`)}
-      <div class="card pad">${list.length === 0 ? empty(st === "open" ? "No open incidents. 👍" : "Nothing here.") : `<div class="table-wrap"><table class="t">
+      <div class="card pad">${list.length === 0 ? empty(st === "open" ? "No open incidents." : "Nothing here.") : `<div class="table-wrap"><table class="t">
         <thead><tr><th>Reported</th><th>Site</th><th>Type</th><th>Staff</th><th>What happened</th><th>Status</th><th></th></tr></thead><tbody>
         ${list.map((x) => `<tr>
           <td class="nw">${fmtDate(x.date)} ${esc(x.time)}<br><span class="muted small">${esc(x.reported_by)}</span></td><td>${esc(siteName(x.site_id))}<br><span class="muted small">${esc(x.location)}</span></td>
@@ -798,7 +803,7 @@
     return `
       ${head("Warnings and disciplinary steps", "HR register", `Policy ladder: 1st finding verbal warning · repeat: written warning and refresher (FM Manager with HR) · further repeat: HR action, salary deduction${T.deductRepeat || T.deductFurther ? ` (AED ${esc(T.deductRepeat || "–")} / ${esc(T.deductFurther || "–")})` : ""} · serious conduct: removal and HR investigation.`)}
       <div class="card pad panel mb"><h3>Steps due, not recorded yet <span class="muted small">${pending.length}</span></h3>
-        ${pending.length === 0 ? empty("Everything due has been recorded. 👍") : `<div class="table-wrap"><table class="t"><thead><tr><th>Employee</th><th>Site</th><th>Findings (${T.warningWindowDays} days)</th><th>Due</th><th></th></tr></thead><tbody>
+        ${pending.length === 0 ? empty("Everything due has been recorded.") : `<div class="table-wrap"><table class="t"><thead><tr><th>Employee</th><th>Site</th><th>Findings (${T.warningWindowDays} days)</th><th>Due</th><th></th></tr></thead><tbody>
           ${pending.map((p) => `<tr><td><a class="blue" href="#/employees/${p.emp.id}">${esc(p.emp.name)}</a><br><span class="muted small">${esc(p.emp.staff_no)} · ${esc(p.emp.trade)}</span></td><td>${esc(siteName(p.emp.site_id))}</td>
             <td><span class="pill ${p.findings >= 3 ? "red" : p.findings === 2 ? "amber" : "grey"}">${p.findings}</span></td>
             <td class="small">${p.needs.map((n) => `<b>${esc(S.levelLabel(n.level))}</b> <span class="muted">(${esc(n.why)}, ${fmtDate(n.since)})</span>`).join("<br>")}</td>
@@ -840,7 +845,7 @@
     const LABEL = { saveCheck: "Saved a check", submitDay: "Sent daily checklist", addSupply: "Added supply request", issueSupply: "Marked supply issued", trained: "Marked training", createAudit: "Recorded audit", auditStep: "Audit follow-up step", addAction: "Added audit finding", toggleAction: "Closed / reopened action", saveSite: "Changed site", saveUser: "Changed user", changePin: "Changed PIN", saveEmployee: "Changed employee", importEmployees: "Imported staff", saveSettings: "Changed rules", addIncident: "Reported incident", updateIncident: "Updated incident", addDiscipline: "HR register entry", deleteDiscipline: "Deleted HR entry", saveBaseline: "Baseline check", testDigest: "Sent test email" };
     return `
       ${head("Who did what, and when", "Activity log", `Latest ${(ACT || []).length} changes. Logins and page views are not logged.`,
-        `<form id="act-filter" class="filters"><input type="search" name="q" value="${esc(R.q.q || "")}" placeholder="Search user, action, name"><button class="btn small navy" type="submit">Search</button></form><button class="btn small ghost" data-reload-act>↻ Refresh</button>`)}
+        `<form id="act-filter" class="filters"><input type="search" name="q" value="${esc(R.q.q || "")}" placeholder="Search user, action, name"><button class="btn small navy" type="submit">Search</button></form><button class="btn small ghost" data-reload-act>${G.icon("refresh")}Refresh</button>`)}
       <div class="card pad">${list.length === 0 ? empty("Nothing logged yet.") : `<div class="table-wrap"><table class="t"><thead><tr><th>Time</th><th>User</th><th>What</th><th>Details</th></tr></thead><tbody>
         ${list.slice(0, 1000).map((x) => `<tr><td class="nw small">${esc(x.time)}</td><td>${esc(x.user)}<br><span class="muted small">${esc(S.roleLabel(x.role))}</span></td><td>${esc(LABEL[x.action] || x.action)}</td><td class="small">${esc(x.details)}</td></tr>`).join("")}
       </tbody></table></div>`}</div>`;
