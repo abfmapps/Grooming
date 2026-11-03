@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ABFM Checklist App – Mockup</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  body { padding: 48px 56px 56px; width: 1760px; }
+  .page-head { margin-bottom: 32px; }
+  .page-head h1 { font-size: 34px; color: var(--navy); margin: 6px 0 6px; }
+  .row { display: flex; gap: 40px; align-items: flex-start; }
+  .slot { width: 380px; }
+  .slot .cap { margin-top: 16px; }
+  .slot .cap b { display: block; font-size: 15px; color: var(--navy); }
+  .slot .cap > span { font-size: 13px; color: var(--muted); line-height: 1.45; display: block; margin-top: 4px; }
+  .num { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--orange); color: #fff; font-size: 12px; font-weight: 700; margin-right: 8px; vertical-align: 1px; }
+
+  .phone { width: 380px; height: 800px; border-radius: 44px; background: #111; padding: 10px; box-shadow: 0 18px 40px rgba(30,30,50,.18); }
+  .screen { width: 100%; height: 100%; border-radius: 35px; overflow: hidden; background: var(--bg); position: relative; display: flex; flex-direction: column; }
+  .status { height: 34px; display: flex; justify-content: space-between; align-items: center; padding: 0 26px; font-size: 12.5px; font-weight: 600; flex-shrink: 0; }
+  .status.dark { background: var(--navy); color: #fff; }
+  .body { flex: 1; overflow: hidden; padding: 14px 16px; }
+  .tabbar { height: 64px; background: #fff; border-top: 1px solid var(--line); display: flex; justify-content: space-around; align-items: center; padding-bottom: 8px; flex-shrink: 0; }
+  .tab { font-size: 10.5px; color: var(--muted); text-align: center; font-weight: 500; }
+  .tab .ic { width: 22px; height: 22px; border-radius: 6px; margin: 0 auto 3px; border: 2px solid currentColor; }
+  .tab.on { color: var(--orange); }
+
+  /* screen 1 */
+  .hero { background: var(--navy); color: #fff; padding: 6px 20px 22px; }
+  .hero .hi { font-size: 13px; opacity: .75; }
+  .hero h2 { font-size: 22px; margin: 2px 0 12px; }
+  .site-sel { background: rgba(255,255,255,.1); border-radius: 10px; padding: 9px 12px; display: flex; justify-content: space-between; font-size: 13px; }
+  .prog { display: flex; align-items: center; gap: 16px; margin-top: 16px; }
+  .ring { width: 70px; height: 70px; border-radius: 50%; background: conic-gradient(var(--orange) 0 75%, rgba(255,255,255,.18) 75% 100%); display: grid; place-items: center; }
+  .ring div { width: 54px; height: 54px; border-radius: 50%; background: var(--navy); display: grid; place-items: center; font-weight: 700; font-size: 15px; }
+  .task { display: flex; align-items: center; gap: 12px; padding: 13px 14px; margin-bottom: 10px; }
+  .task .ico { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; font-size: 19px; flex-shrink: 0; }
+  .task .t { flex: 1; }
+  .task .t b { display: block; font-size: 14.5px; }
+  .task .t span { font-size: 12px; color: var(--muted); }
+  .chev { color: #b0b0b8; font-size: 20px; }
+  .btn { display: block; text-align: center; background: var(--orange); color: #fff; font-weight: 600; padding: 14px; border-radius: 12px; font-size: 15px; }
+  .btn.ghost { background: #fff; color: var(--navy); border: 1px solid var(--line); }
+  .btn.navy { background: var(--navy); }
+
+  /* screen 2 */
+  .topbar { background: #fff; padding: 8px 16px 12px; border-bottom: 1px solid var(--line); }
+  .topbar h3 { font-size: 19px; color: var(--navy); }
+  .search { margin-top: 10px; background: var(--bg); border-radius: 10px; padding: 9px 12px; color: var(--muted); font-size: 13px; }
+  .chips { display: flex; gap: 6px; margin-top: 10px; }
+  .chip { font-size: 12px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); background: #fff; font-weight: 500; white-space: nowrap; }
+  .chip.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+  .emp { display: flex; align-items: center; gap: 11px; padding: 11px 12px; background: #fff; border-bottom: 1px solid var(--line); }
+  .emp:first-child { border-radius: 12px 12px 0 0; }
+  .emp .n { flex: 1; min-width: 0; }
+  .emp .n b { display: block; font-size: 14px; }
+  .emp .n span { font-size: 11.5px; color: var(--muted); }
+
+  /* screen 3 */
+  .sec { margin-bottom: 10px; padding: 4px 12px; }
+  .sec h4 { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--orange); padding: 9px 0 4px; display: flex; justify-content: space-between; }
+  .item { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-top: 1px solid #f0f0ed; font-size: 13.5px; }
+  .item:first-of-type { border-top: 0; }
+  .yn { display: flex; gap: 6px; }
+  .yn span { width: 34px; height: 30px; border-radius: 8px; display: grid; place-items: center; font-weight: 700; font-size: 14px; border: 1px solid var(--line); color: #b5b5bd; background: #fff; }
+  .yn .y.on { background: var(--green); border-color: var(--green); color: #fff; }
+  .yn .n.on { background: var(--red); border-color: var(--red); color: #fff; }
+  .gapbox { background: var(--bg); border-radius: 10px; padding: 10px; margin: 2px 0 8px; font-size: 12px; }
+  .gapbox .lbl { font-weight: 600; color: var(--muted); font-size: 11px; margin-bottom: 6px; }
+  .gapbox .chips { margin-top: 0; flex-wrap: wrap; }
+  .gapbox .chip { font-size: 11.5px; padding: 4px 9px; }
+  .chip.sel-red { background: var(--red-soft); border-color: var(--red); color: var(--red); font-weight: 600; }
+  .chip.sel-blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); font-weight: 600; }
+  .chip.sel-green { background: var(--green-soft); border-color: var(--green); color: var(--green); font-weight: 600; }
+  .note { margin-top: 8px; background: var(--blue-soft); color: var(--blue); border-radius: 8px; padding: 7px 9px; font-size: 11.5px; font-weight: 500; }
+  .warn { background: var(--amber-soft); color: #8a5a10; border-radius: 10px; padding: 9px 11px; font-size: 12px; margin-bottom: 10px; line-height: 1.4; }
+
+  /* screen 4 */
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 12px; }
+  .stat { padding: 12px; }
+  .stat b { font-size: 26px; display: block; font-family: "IBM Plex Serif", serif; }
+  .stat span { font-size: 12px; color: var(--muted); }
+  .gl { padding: 10px 12px; border-bottom: 1px solid #f0f0ed; font-size: 13px; }
+  .gl:last-child { border-bottom: 0; }
+  .gl .top { display: flex; justify-content: space-between; align-items: center; }
+  .gl small { color: var(--muted); font-size: 11.5px; display: block; margin-top: 3px; }
+  .confirm { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; color: var(--muted); margin: 12px 2px; line-height: 1.4; }
+  .box { width: 18px; height: 18px; border-radius: 5px; background: var(--orange); color: #fff; display: grid; place-items: center; font-size: 12px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<div class="page-head">
+  <div class="eyebrow">Al Bonian FM · App 1 of 2</div>
+  <h1 class="serif">Daily Checklist app</h1>
+  <div class="muted" style="font-size:15px">For Supervisors, FM Managers, Camp Bosses and Site Managers, on their phones. One check per staff member, every day.</div>
+</div>
+
+<div class="row">
+  <!-- 1 HOME -->
+  <div class="slot">
+    <div class="phone"><div class="screen">
+      <div class="status dark"><span>7:42</span><span>●●● 4G</span></div>
+      <div class="hero">
+        <div class="hi">Good morning</div>
+        <h2 class="serif">Faisal Ahmed</h2>
+        <div class="site-sel"><span>📍 Al Reem Villas · Supervisor</span><span>▾</span></div>
+        <div class="prog">
+          <div class="ring"><div>18/24</div></div>
+          <div>
+            <div style="font-weight:600">Tuesday, 3 November</div>
+            <div style="font-size:12.5px;opacity:.75;margin-top:3px">18 of 24 staff checked<br>Checklist due at 18:00</div>
+          </div>
+        </div>
+      </div>
+      <div class="body">
+        <div class="card task"><div class="ico" style="background:var(--orange-soft)">✅</div><div class="t"><b>Site check</b><span>6 staff left to check</span></div><span class="chev">›</span></div>
+        <div class="card task"><div class="ico" style="background:var(--blue-soft)">🏠</div><div class="t"><b>Camp check</b><span>Done by Camp Boss · 06:15</span></div><span class="pill green">Done</span></div>
+        <div class="card task"><div class="ico" style="background:var(--amber-soft)">🔧</div><div class="t"><b>Random field check</b><span>2 of 3 done this week</span></div><span class="chev">›</span></div>
+        <div class="card task"><div class="ico" style="background:var(--red-soft)">📦</div><div class="t"><b>Supply gaps</b><span>3 items waiting from Stores</span></div><span class="chev">›</span></div>
+        <div class="btn ghost" style="margin-top:6px;color:var(--muted)">Submit to Head Office (finish checks first)</div>
+      </div>
+      <div class="tabbar"><div class="tab on"><div class="ic"></div>Today</div><div class="tab"><div class="ic"></div>Staff</div><div class="tab"><div class="ic"></div>Training</div><div class="tab"><div class="ic"></div>Me</div></div>
+    </div></div>
+    <div class="cap"><b><span class="num">1</span>Today's tasks</b><span>Opens on the user's site. Shows progress, the camp check, weekly field checks (target 3) and items waiting from Stores.</span></div>
+  </div>
+
+  <!-- 2 STAFF LIST -->
+  <div class="slot">
+    <div class="phone"><div class="screen">
+      <div class="status" style="background:#fff"><span>7:44</span><span>●●● 4G</span></div>
+      <div class="topbar">
+        <h3 class="serif">Site check · Al Reem Villas</h3>
+        <div class="search">🔍  Search name or staff ID</div>
+        <div class="chips"><span class="chip on">All 24</span><span class="chip">To check 6</span><span class="chip">Gaps 3</span><span class="chip">Pass 15</span></div>
+      </div>
+      <div class="body" style="padding-top:12px">
+        <div class="card" style="overflow:hidden">
+          <div class="emp"><div class="avatar">MA</div><div class="n"><b>Mohammed Asif</b><span>ABFM-1043 · Technician</span></div><span class="pill grey">To check</span></div>
+          <div class="emp"><div class="avatar">RK</div><div class="n"><b>Rajesh Kumar</b><span>ABFM-0987 · Cleaner</span></div><span class="pill green">✓ Pass</span></div>
+          <div class="emp"><div class="avatar">BT</div><div class="n"><b>Bikash Thapa</b><span>ABFM-1120 · Cleaner</span></div><span class="pill red">2 gaps</span></div>
+          <div class="emp"><div class="avatar">JT</div><div class="n"><b>Joseph Thomas</b><span>ABFM-0876 · Electrician</span></div><span class="pill green">✓ Pass</span></div>
+          <div class="emp"><div class="avatar">AR</div><div class="n"><b>Abdul Rahman</b><span>ABFM-1002 · Plumber</span></div><span class="pill blue">Supply gap</span></div>
+          <div class="emp"><div class="avatar">SB</div><div class="n"><b>Suresh Babu</b><span>ABFM-0931 · AC Technician</span></div><span class="pill green">✓ Pass</span></div>
+          <div class="emp"><div class="avatar">IK</div><div class="n"><b>Imran Khan</b><span>ABFM-1077 · Helper</span></div><span class="pill grey">To check</span></div>
+          <div class="emp"><div class="avatar">RP</div><div class="n"><b>Ramesh Pillai</b><span>ABFM-0912 · Gardener</span></div><span class="pill amber">Absent</span></div>
+          <div class="emp"><div class="avatar">NS</div><div class="n"><b>Nabin Shrestha</b><span>ABFM-1150 · Cleaner</span></div><span class="pill green">✓ Pass</span></div>
+        </div>
+      </div>
+      <div class="tabbar"><div class="tab"><div class="ic"></div>Today</div><div class="tab on"><div class="ic"></div>Staff</div><div class="tab"><div class="ic"></div>Training</div><div class="tab"><div class="ic"></div>Me</div></div>
+    </div></div>
+    <div class="cap"><b><span class="num">2</span>Staff list</b><span>Everyone on the site, with today's status. Tap a name to check them. Absent and on-leave staff can be marked too.</span></div>
+  </div>
+
+  <!-- 3 CHECK -->
+  <div class="slot">
+    <div class="phone"><div class="screen">
+      <div class="status" style="background:#fff"><span>7:46</span><span>●●● 4G</span></div>
+      <div class="topbar" style="display:flex;gap:11px;align-items:center">
+        <span style="font-size:20px;color:var(--muted)">‹</span>
+        <div class="avatar">MA</div>
+        <div><b style="font-size:15px">Mohammed Asif</b><div class="muted" style="font-size:11.5px">ABFM-1043 · Technician</div></div>
+      </div>
+      <div class="body" style="padding-top:10px">
+        <div class="warn">⚠️ <b>1 finding in the last 90 days</b> (verbal warning, 12 Oct). Another finding means a <b>written warning</b>.</div>
+        <div class="card sec">
+          <h4><span>Grooming</span><span class="muted" style="letter-spacing:0">30 pts</span></h4>
+          <div class="item">Hygiene, nails, breath<div class="yn"><span class="y on">✓</span><span class="n">✕</span></div></div>
+          <div class="item">Hair & beard trimmed<div class="yn"><span class="y on">✓</span><span class="n">✕</span></div></div>
+          <div class="item">Full uniform, clean, right size<div class="yn"><span class="y">✓</span><span class="n on">✕</span></div></div>
+          <div class="gapbox">
+            <div class="lbl">REASON</div>
+            <div class="chips"><span class="chip">Not worn</span><span class="chip">Dirty</span><span class="chip">Wrong size</span><span class="chip sel-blue">Supply gap</span></div>
+            <div class="note">📦 Requested 28 Oct, not received. <b>Not counted against the employee.</b></div>
+          </div>
+          <div class="item">ID card displayed<div class="yn"><span class="y on">✓</span><span class="n">✕</span></div></div>
+        </div>
+        <div class="card sec">
+          <h4><span>PPE</span><span class="muted" style="letter-spacing:0">25 pts</span></h4>
+          <div class="item">Safety shoes<div class="yn"><span class="y on">✓</span><span class="n">✕</span></div></div>
+          <div class="item">Gloves for the task<div class="yn"><span class="y">✓</span><span class="n on">✕</span></div></div>
+          <div class="gapbox">
+            <div class="lbl">ACTION TAKEN TODAY</div>
+            <div class="chips"><span class="chip">Sent to change</span><span class="chip sel-green">Item issued</span><span class="chip">Verbal warning</span></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px"><div class="btn ghost" style="flex:1;padding:12px">📷 Photo</div><div class="btn" style="flex:2;padding:12px">Save & next</div></div>
+      </div>
+    </div></div>
+    <div class="cap"><b><span class="num">3</span>Checking one employee</b><span>A tick or a cross for each standard. A cross asks for the reason and the action taken. A supply gap is recorded with its request date and not counted against the employee. Repeat findings are flagged automatically.</span></div>
+  </div>
+
+  <!-- 4 SUBMIT -->
+  <div class="slot">
+    <div class="phone"><div class="screen">
+      <div class="status" style="background:#fff"><span>17:38</span><span>●●● 4G</span></div>
+      <div class="topbar"><h3 class="serif">Submit daily checklist</h3><div class="muted" style="font-size:12px;margin-top:3px">Al Reem Villas · Tue 3 Nov</div></div>
+      <div class="body">
+        <div class="stats">
+          <div class="card stat"><b>24</b><span>Staff on site</span></div>
+          <div class="card stat"><b style="color:var(--green)">20</b><span>Passed</span></div>
+          <div class="card stat"><b style="color:var(--red)">2</b><span>With gaps</span></div>
+          <div class="card stat"><b style="color:var(--blue)">1</b><span>Supply gap · 1 absent</span></div>
+        </div>
+        <div class="eyebrow" style="margin:4px 2px 8px">Gaps and action taken</div>
+        <div class="card">
+          <div class="gl"><div class="top"><b>Bikash Thapa</b><span class="pill amber">Verbal warning</span></div><small>Uniform not pressed · Hair below collar</small></div>
+          <div class="gl"><div class="top"><b>Mohammed Asif</b><span class="pill green">Item issued</span></div><small>No gloves. Issued on site</small></div>
+          <div class="gl"><div class="top"><b>Abdul Rahman</b><span class="pill blue">Supply gap</span></div><small>Safety shoes, size 43. Requested 26 Oct</small></div>
+        </div>
+        <div class="confirm"><span class="box">✓</span>I confirm I checked every staff member on this site today.</div>
+        <div class="btn navy">Send to Head Office</div>
+        <div class="muted" style="text-align:center;font-size:11.5px;margin-top:10px">Works offline. Sends when the phone is back online.</div>
+      </div>
+    </div></div>
+    <div class="cap"><b><span class="num">4</span>End of day: submit</b><span>A summary of the day, with each gap and its action. Sending it gives Head Office the checklist the policy asks for, along with the time it was sent.</span></div>
+  </div>
+</div>
+</body>
+</html>

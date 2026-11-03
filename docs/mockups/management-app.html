@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ABFM Management App – Mockup</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  body { background: #d9d9de; padding: 0; }
+  .shot { width: 1440px; height: 900px; display: flex; background: var(--bg); margin-bottom: 40px; overflow: hidden; }
+  .side { width: 232px; background: var(--navy); color: #c9c9d6; padding: 22px 14px; flex-shrink: 0; display: flex; flex-direction: column; }
+  .brand { color: #fff; padding: 0 10px 22px; }
+  .brand .eyebrow { font-size: 10px; }
+  .brand b { display: block; font-family: "IBM Plex Serif", serif; font-size: 19px; margin-top: 4px; }
+  .nav a { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; font-size: 13.5px; margin-bottom: 2px; color: inherit; text-decoration: none; }
+  .nav a .d { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid currentColor; opacity: .7; }
+  .nav a.on { background: rgba(255,255,255,.1); color: #fff; font-weight: 600; }
+  .nav a.on .d { border-color: var(--orange); background: var(--orange); opacity: 1; }
+  .nav .cnt { margin-left: auto; background: var(--orange); color: #fff; font-size: 11px; padding: 1px 7px; border-radius: 99px; font-weight: 600; }
+  .user { margin-top: auto; display: flex; gap: 10px; align-items: center; padding: 10px; border-top: 1px solid rgba(255,255,255,.12); font-size: 12.5px; }
+  .user .avatar { width: 32px; height: 32px; background: var(--orange); color: #fff; }
+  .main { flex: 1; padding: 26px 32px; overflow: hidden; }
+  .head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; }
+  .head h1 { font-size: 27px; color: var(--navy); margin-top: 4px; }
+  .filters { display: flex; gap: 8px; }
+  .sel { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; font-size: 13px; }
+  .sel.btn { background: var(--navy); color: #fff; border-color: var(--navy); font-weight: 600; }
+  .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 18px; }
+  .kpi { padding: 15px 17px; }
+  .kpi .l { font-size: 12px; color: var(--muted); font-weight: 500; }
+  .kpi .v { font-family: "IBM Plex Serif", serif; font-size: 30px; font-weight: 700; color: var(--navy); margin: 4px 0 3px; }
+  .kpi .v small { font-size: 16px; color: var(--muted); font-weight: 600; }
+  .kpi .s { font-size: 12px; }
+  .bar { height: 6px; background: #ececea; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--orange); border-radius: 3px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 340px; gap: 18px; }
+  .panel { padding: 16px 18px; }
+  .panel h3 { font-size: 15px; color: var(--navy); margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; padding: 0 8px 9px; border-bottom: 1px solid var(--line); }
+  td { padding: 9px 8px; border-bottom: 1px solid #f0f0ed; vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  td:nth-last-child(2) { white-space: nowrap; }
+  .strip { display: flex; gap: 2px; }
+  .strip i { width: 11px; height: 18px; border-radius: 2px; }
+  .g { background: #3c9a68; } .g2 { background: #8fc9a8; } .a { background: #e2b45c; } .r { background: #d65a4f; } .x { background: #e1e1de; }
+  .score { font-weight: 700; font-family: "IBM Plex Serif", serif; }
+  .alert { display: flex; gap: 10px; padding: 11px 0; border-bottom: 1px solid #f0f0ed; font-size: 12.5px; line-height: 1.45; }
+  .alert:last-child { border-bottom: 0; }
+  .alert .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+  .alert b { display: block; font-size: 13px; }
+  .legend { display: flex; gap: 12px; font-size: 11px; color: var(--muted); font-weight: 500; }
+  .legend span { display: inline-flex; gap: 5px; align-items: center; }
+  .legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+  /* audit */
+  .area { margin-bottom: 15px; }
+  .area .top { display: flex; justify-content: space-between; font-size: 13.5px; margin-bottom: 6px; }
+  .area .top b { font-family: "IBM Plex Serif", serif; }
+  .hbar { height: 10px; background: #ececea; border-radius: 5px; overflow: hidden; }
+  .hbar i { display: block; height: 100%; background: var(--navy); }
+  .total { display: flex; align-items: center; gap: 18px; padding: 16px; border-radius: 12px; background: var(--red-soft); margin-top: 6px; }
+  .total .big { font-family: "IBM Plex Serif", serif; font-size: 46px; font-weight: 700; color: var(--red); line-height: 1; }
+  .steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 16px; }
+  .step { padding: 12px; border-radius: 10px; background: #fff; border: 1px solid var(--line); position: relative; }
+  .step .e { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+  .step b { display: block; font-size: 13.5px; margin: 4px 0 6px; }
+  .step.done { border-color: var(--green); background: var(--green-soft); }
+  .step.done .e { color: var(--green); }
+  .step.now { border-color: var(--orange); background: var(--orange-soft); }
+  .step.now .e { color: var(--orange); }
+
+  /* employee */
+  .ladder { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin: 4px 0 4px; }
+  .rung { padding: 12px 14px; border: 1px solid var(--line); background: #fff; font-size: 12.5px; }
+  .rung:first-child { border-radius: 10px 0 0 10px; }
+  .rung:last-child { border-radius: 0 10px 10px 0; }
+  .rung .e { font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; font-weight: 600; color: var(--muted); }
+  .rung b { display: block; margin: 4px 0 3px; font-size: 13.5px; }
+  .rung.past { background: #f2f2ef; color: var(--muted); }
+  .rung.next { background: var(--orange); border-color: var(--orange); color: #fff; }
+  .rung.next .e { color: #fff; opacity: .85; }
+  .tl { position: relative; padding-left: 22px; }
+  .tl::before { content: ""; position: absolute; left: 6px; top: 6px; bottom: 6px; width: 2px; background: var(--line); }
+  .ev { position: relative; padding: 0 0 15px; font-size: 13px; }
+  .ev::before { content: ""; position: absolute; left: -21px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 2px solid var(--muted); }
+  .ev.red::before { border-color: var(--red); background: var(--red); }
+  .ev.blue::before { border-color: var(--blue); background: var(--blue); }
+  .ev.green::before { border-color: var(--green); background: var(--green); }
+  .ev small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .cal { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; }
+  .cal i { height: 26px; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<!-- ============ SCREEN A : OVERVIEW ============ -->
+<div class="shot" id="overview">
+  <aside class="side">
+    <div class="brand"><div class="eyebrow">Al Bonian FM</div><b>Grooming Control</b></div>
+    <nav class="nav">
+      <a class="on"><span class="d"></span>Overview</a>
+      <a><span class="d"></span>Daily checklists</a>
+      <a><span class="d"></span>Audits</a>
+      <a><span class="d"></span>Findings & actions<span class="cnt">9</span></a>
+      <a><span class="d"></span>Employees</a>
+      <a><span class="d"></span>Supply gaps<span class="cnt">7</span></a>
+      <a><span class="d"></span>Training</a>
+      <a><span class="d"></span>Monthly report</a>
+      <a><span class="d"></span>Sites & users</a>
+    </nav>
+    <div class="user"><div class="avatar">HO</div><div><b style="color:#fff">Head Office</b><br>Director of Operations</div></div>
+  </aside>
+  <main class="main">
+    <div class="head">
+      <div><div class="eyebrow">Tuesday, 3 November 2026</div><h1 class="serif">Overview, all sites</h1></div>
+      <div class="filters"><span class="sel">All FM Managers ▾</span><span class="sel">Last 14 days ▾</span><span class="sel btn">Export</span></div>
+    </div>
+    <div class="kpis">
+      <div class="card kpi"><div class="l">Checklists received today</div><div class="v">14<small> / 16</small></div><div class="s" style="color:var(--red)">2 sites not submitted</div></div>
+      <div class="card kpi"><div class="l">Staff passing daily check</div><div class="v">93.4%</div><div class="s" style="color:var(--green)">▲ 2.1 pts vs last week</div></div>
+      <div class="card kpi"><div class="l">Open findings</div><div class="v">9</div><div class="s" style="color:var(--red)">2 past the 7-day limit</div></div>
+      <div class="card kpi"><div class="l">Average audit score</div><div class="v">87<small> / 100</small></div><div class="s muted">Pass mark 85 · 2 sites below</div></div>
+      <div class="card kpi"><div class="l">Staff trained</div><div class="v">78%</div><div class="s muted">Target 100% by 25 Nov</div><div class="bar"><i style="width:78%"></i></div></div>
+    </div>
+    <div class="grid2">
+      <div class="card panel">
+        <h3><span>Sites</span><span class="legend"><span><i class="g"></i>100%</span><span><i class="g2"></i>90–99%</span><span><i class="a"></i>80–89%</span><span><i class="r"></i>&lt;80%</span><span><i class="x"></i>Not sent</span></span></h3>
+        <table>
+          <tr><th>Site</th><th>FM Manager</th><th>Today</th><th>Daily compliance, last 14 days</th><th>Last audit</th><th>Open</th></tr>
+          <tr><td><b>Al Reem Villas</b><br><span class="muted" style="font-size:11.5px">24 staff</span></td><td>Faisal Ahmed</td><td><span class="pill green">✓ 17:38</span></td><td><div class="strip"><i class="g"></i><i class="g"></i><i class="g2"></i><i class="g"></i><i class="g"></i><i class="g2"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g2"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g2"></i></div></td><td><span class="score">91</span> <span class="pill green">Pass</span></td><td>1</td></tr>
+          <tr><td><b>Yas Community</b><br><span class="muted" style="font-size:11.5px">31 staff</span></td><td>Sanjay Menon</td><td><span class="pill green">✓ 16:55</span></td><td><div class="strip"><i class="a"></i><i class="r"></i><i class="a"></i><i class="a"></i><i class="g2"></i><i class="a"></i><i class="r"></i><i class="a"></i><i class="g2"></i><i class="a"></i><i class="a"></i><i class="g2"></i><i class="a"></i><i class="a"></i></div></td><td><span class="score" style="color:var(--red)">79</span> <span class="pill red">Fail</span></td><td>4</td></tr>
+          <tr><td><b>Khalifa City Camp</b><br><span class="muted" style="font-size:11.5px">58 staff</span></td><td>Tariq Hussain</td><td><span class="pill red">Not sent</span></td><td><div class="strip"><i class="g2"></i><i class="g2"></i><i class="x"></i><i class="g2"></i><i class="g"></i><i class="g2"></i><i class="x"></i><i class="g2"></i><i class="g2"></i><i class="g"></i><i class="g2"></i><i class="x"></i><i class="g2"></i><i class="x"></i></div></td><td><span class="score">86</span> <span class="pill green">Pass</span></td><td>1</td></tr>
+          <tr><td><b>Saadiyat Residences</b><br><span class="muted" style="font-size:11.5px">19 staff</span></td><td>Faisal Ahmed</td><td><span class="pill green">✓ 17:10</span></td><td><div class="strip"><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g2"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g2"></i><i class="g"></i></div></td><td><span class="score">95</span> <span class="pill green">Pass</span></td><td>0</td></tr>
+          <tr><td><b>Mussafah Workshop</b><br><span class="muted" style="font-size:11.5px">27 staff</span></td><td>Sanjay Menon</td><td><span class="pill red">Not sent</span></td><td><div class="strip"><i class="a"></i><i class="g2"></i><i class="a"></i><i class="x"></i><i class="a"></i><i class="g2"></i><i class="a"></i><i class="a"></i><i class="x"></i><i class="g2"></i><i class="a"></i><i class="a"></i><i class="g2"></i><i class="x"></i></div></td><td><span class="score" style="color:var(--red)">83</span> <span class="pill red">Fail</span></td><td>3</td></tr>
+          <tr><td><b>Corniche Towers</b><br><span class="muted" style="font-size:11.5px">22 staff</span></td><td>Tariq Hussain</td><td><span class="pill green">✓ 17:02</span></td><td><div class="strip"><i class="g"></i><i class="g2"></i><i class="g"></i><i class="g"></i><i class="g2"></i><i class="g"></i><i class="g"></i><i class="g2"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g2"></i><i class="g"></i><i class="g"></i></div></td><td><span class="score">89</span> <span class="pill green">Pass</span></td><td>0</td></tr>
+        </table>
+      </div>
+      <div class="card panel">
+        <h3>Needs attention</h3>
+        <div class="alert"><span class="dot" style="background:var(--red)"></span><div><b>Yas Community failed 2 audits in a row</b>Escalate to the Director of Operations (policy rule)</div></div>
+        <div class="alert"><span class="dot" style="background:var(--red)"></span><div><b>2 findings past the 7-day limit</b>Mussafah Workshop · owner: Sanjay Menon</div></div>
+        <div class="alert"><span class="dot" style="background:var(--amber)"></span><div><b>Khalifa City Camp checklist not sent</b>4th missed day in 14. Remind Tariq Hussain</div></div>
+        <div class="alert"><span class="dot" style="background:var(--amber)"></span><div><b>3 employees on a 3rd finding</b>Refer to HR for disciplinary action</div></div>
+        <div class="alert"><span class="dot" style="background:var(--blue)"></span><div><b>7 supply gaps older than 5 working days</b>Stores target is 5 working days</div></div>
+        <div class="alert"><span class="dot" style="background:var(--muted)"></span><div><b>Mussafah Workshop re-audit due by 12 Nov</b>Scored below 85, so it must be re-audited within 2 weeks</div></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ============ SCREEN B : AUDIT ============ -->
+<div class="shot" id="audit">
+  <aside class="side">
+    <div class="brand"><div class="eyebrow">Al Bonian FM</div><b>Grooming Control</b></div>
+    <nav class="nav">
+      <a><span class="d"></span>Overview</a>
+      <a><span class="d"></span>Daily checklists</a>
+      <a class="on"><span class="d"></span>Audits</a>
+      <a><span class="d"></span>Findings & actions<span class="cnt">9</span></a>
+      <a><span class="d"></span>Employees</a>
+      <a><span class="d"></span>Supply gaps<span class="cnt">7</span></a>
+      <a><span class="d"></span>Training</a>
+      <a><span class="d"></span>Monthly report</a>
+      <a><span class="d"></span>Sites & users</a>
+    </nav>
+    <div class="user"><div class="avatar">OC</div><div><b style="color:#fff">Layla Haddad</b><br>Operations Control Officer</div></div>
+  </aside>
+  <main class="main">
+    <div class="head">
+      <div><div class="eyebrow">Audits › Mussafah Workshop</div><h1 class="serif">Audit, 29 October 2026</h1><div class="muted" style="margin-top:4px;font-size:13px">Unannounced · OCO Layla Haddad with HSE · 6 staff sampled · FM Manager Sanjay Menon</div></div>
+      <div class="filters"><span class="sel">Download PDF report</span><span class="sel btn">Send to FM Manager</span></div>
+    </div>
+    <div style="display:grid;grid-template-columns:420px 1fr;gap:18px">
+      <div class="card panel">
+        <h3>Score</h3>
+        <div class="area"><div class="top"><span>Grooming and uniform</span><b>24 / 30</b></div><div class="hbar"><i style="width:80%"></i></div></div>
+        <div class="area"><div class="top"><span>PPE</span><b>21 / 25</b></div><div class="hbar"><i style="width:84%"></i></div></div>
+        <div class="area"><div class="top"><span>Customer communication</span><b>23 / 25</b></div><div class="hbar"><i style="width:92%"></i></div></div>
+        <div class="area"><div class="top"><span>Daily control evidence<br><span class="muted" style="font-size:11.5px">checklists, gap log, field checks</span></span><b>15 / 20</b></div><div class="hbar"><i style="width:75%"></i></div></div>
+        <div class="total"><div class="big">83</div><div><b style="color:var(--red);font-size:15px">Below 85: non-compliant</b><div style="font-size:12.5px;margin-top:3px;color:#7a2a22">The FM Manager must send a corrective action plan. Re-audit by 12 Nov.</div></div></div>
+        <div style="margin-top:16px;font-size:12.5px" class="muted"><b style="color:var(--ink)">Evidence checked automatically:</b> 19 of 23 daily checklists sent this month · 2 of 12 field checks done in the last 4 weeks (target 3/week)</div>
+      </div>
+      <div>
+        <div class="steps">
+          <div class="step done"><div class="e">Day 0 ✓</div><b>Audit visit</b><span style="font-size:12px">29 Oct</span></div>
+          <div class="step done"><div class="e">By day 2 ✓</div><b>Report sent</b><span style="font-size:12px">30 Oct</span></div>
+          <div class="step done"><div class="e">By day 3 ✓</div><b>Action plan</b><span style="font-size:12px">1 Nov</span></div>
+          <div class="step now"><div class="e">By day 7 · late</div><b>Actions closed</b><span style="font-size:12px">Was due 5 Nov · 3 of 5</span></div>
+          <div class="step"><div class="e">Next visit</div><b>Verified on site</b><span style="font-size:12px">Re-audit by 12 Nov</span></div>
+        </div>
+        <div class="card panel">
+          <h3><span>Findings and corrective actions</span><span class="pill amber">3 of 5 closed</span></h3>
+          <table>
+            <tr><th>Finding</th><th>Staff</th><th>Action</th><th>Owner</th><th>Due</th><th>Status</th></tr>
+            <tr><td>Uniform not pressed</td><td>Imran Khan</td><td>Verbal warning recorded</td><td>Sanjay M.</td><td>1 Nov</td><td><span class="pill green">Closed</span></td></tr>
+            <tr><td>No ear plugs at grinder</td><td>Vijay Raj</td><td>Ear plugs issued, toolbox talk</td><td>HSE</td><td>2 Nov</td><td><span class="pill green">Closed</span></td></tr>
+            <tr><td>ID card not displayed</td><td>Ali Hassan</td><td>Replacement card</td><td>HR</td><td>5 Nov</td><td><span class="pill red">Overdue</span></td></tr>
+            <tr><td>Hair below collar (repeat)</td><td>Bikash Thapa</td><td>Written warning + refresher</td><td>Sanjay M. + HR</td><td>5 Nov</td><td><span class="pill red">Overdue</span></td></tr>
+            <tr><td>Field checks below target</td><td>(site)</td><td>3 field checks per week scheduled</td><td>Sanjay M.</td><td>3 Nov</td><td><span class="pill green">Closed</span></td></tr>
+          </table>
+        </div>
+        <div class="card panel" style="margin-top:14px;background:var(--navy);color:#fff;border-color:var(--navy)">
+          <b style="color:var(--orange)">Escalation check:</b> the previous audit (Sep) scored 88. If this site fails its next audit too, it goes to the Director of Operations automatically.
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ============ SCREEN C : EMPLOYEE ============ -->
+<div class="shot" id="employee">
+  <aside class="side">
+    <div class="brand"><div class="eyebrow">Al Bonian FM</div><b>Grooming Control</b></div>
+    <nav class="nav">
+      <a><span class="d"></span>Overview</a>
+      <a><span class="d"></span>Daily checklists</a>
+      <a><span class="d"></span>Audits</a>
+      <a><span class="d"></span>Findings & actions<span class="cnt">9</span></a>
+      <a class="on"><span class="d"></span>Employees</a>
+      <a><span class="d"></span>Supply gaps<span class="cnt">7</span></a>
+      <a><span class="d"></span>Training</a>
+      <a><span class="d"></span>Monthly report</a>
+      <a><span class="d"></span>Sites & users</a>
+    </nav>
+    <div class="user"><div class="avatar">HR</div><div><b style="color:#fff">Mariam Saeed</b><br>HR</div></div>
+  </aside>
+  <main class="main">
+    <div class="head">
+      <div style="display:flex;gap:16px;align-items:center">
+        <div class="avatar" style="width:60px;height:60px;font-size:20px">BT</div>
+        <div><div class="eyebrow">Employees › ABFM-1120</div><h1 class="serif">Bikash Thapa</h1><div class="muted" style="font-size:13px;margin-top:2px">Cleaner · Al Reem Villas · FM Manager Faisal Ahmed · Uniform size L · Shoes 42 · Training ✓ 21 Oct</div></div>
+      </div>
+      <div class="filters"><span class="sel">Add note</span><span class="sel btn">Refer to HR</span></div>
+    </div>
+    <div class="card panel" style="margin-bottom:16px">
+      <h3><span>Warning level</span><span class="muted" style="font-size:12px;font-weight:500">Counts findings in the last 90 days · supply gaps are never counted</span></h3>
+      <div class="ladder">
+        <div class="rung past"><div class="e">1st finding ✓</div><b>Verbal warning</b>12 Oct · Faisal Ahmed</div>
+        <div class="rung past"><div class="e">Repeat ✓</div><b>Written warning + refresher</b>29 Oct · with HR</div>
+        <div class="rung next"><div class="e">Next finding</div><b>HR disciplinary action</b>Salary deduction possible (amount set by HR)</div>
+        <div class="rung"><div class="e">Serious conduct</div><b>Removal from site</b>HR investigation · OCO informed</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="card panel">
+        <h3>History</h3>
+        <div class="tl">
+          <div class="ev red"><b>29 Oct · Audit finding (repeat)</b><small>Hair below the shirt collar. Written warning and refresher session booked for 4 Nov</small></div>
+          <div class="ev green"><b>28 Oct · Daily check passed</b><small>Checked by Faisal Ahmed</small></div>
+          <div class="ev blue"><b>20 Oct · Supply gap</b><small>Uniform shirt size L requested · issued 24 Oct (4 working days)</small></div>
+          <div class="ev red"><b>12 Oct · Daily check finding</b><small>Uniform not pressed. Sent to change · verbal warning recorded</small></div>
+          <div class="ev green"><b>5 Oct · Field check passed</b><small>Random check at Villa 112</small></div>
+          <div class="ev"><b>1 Oct · Baseline recorded</b><small>Sizes and PPE held listed by the FM Manager</small></div>
+        </div>
+      </div>
+      <div class="card panel">
+        <h3><span>Daily checks · last 30 days</span><span class="pill green">27 pass · 2 gaps · 1 absent</span></h3>
+        <div class="cal">
+          <i class="g"></i><i class="g"></i><i class="g"></i><i class="r"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="x"></i><i class="g"></i>
+          <i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i>
+          <i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="r"></i><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i>
+        </div>
+        <div class="legend" style="margin-top:10px"><span><i class="g"></i>Pass</span><span><i class="r"></i>Finding</span><span><i class="x"></i>Absent / leave</span></div>
+        <h3 style="margin-top:22px">Gaps by standard</h3>
+        <table>
+          <tr><th>Standard</th><th>Findings (90 days)</th></tr>
+          <tr><td>Hair and facial hair</td><td><b>1</b></td></tr>
+          <tr><td>Uniform clean and pressed</td><td><b>1</b></td></tr>
+          <tr><td>PPE</td><td>0</td></tr>
+          <tr><td>Customer communication</td><td>0</td></tr>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>
