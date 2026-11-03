@@ -40,10 +40,32 @@ window.STD = (function () {
     { code: "written_warning", label: "Written warning" },
     { code: "referred_hr", label: "Referred to HR" },
   ];
+  /* Defaults. Administrators can change these in the dashboard (Sites & users → Rules); the saved values win. */
   const TARGETS = {
     auditPass: 85, findingCloseDays: 7, reportDays: 2, planDays: 3, reauditDays: 14,
     fieldChecksPerWeek: 3, supplyWorkingDays: 5, warningWindowDays: 90, trainingDeadline: "2026-11-25",
+    checklistDue: "18:00", deductRepeat: "", deductFurther: "", digestOn: "0", digestHour: 19, dashboardUrl: "",
   };
+  /* Incidents supervisors report the same day (policy: difficult customers, serious conduct). */
+  const INCIDENT_TYPES = [
+    { code: "difficult_customer", label: "Difficult customer", hint: "Upset or aggressive customer, handed to the supervisor" },
+    { code: "complaint", label: "Customer complaint", hint: "About appearance, behaviour or work" },
+    { code: "serious_conduct", label: "Serious conduct", hint: "Staff removed from site; HR investigation, OCO informed" },
+    { code: "damage", label: "Damage at the property", hint: "Customer property damaged or soiled" },
+    { code: "other", label: "Other", hint: "" },
+  ];
+  /* Baseline check: what each person should hold. */
+  const BASELINE_ITEMS = [
+    { code: "uniform", label: "Full uniform set" }, { code: "id_card", label: "ID card" }, { code: "shoes", label: "Safety shoes" },
+    { code: "gloves_fabric", label: "Fabric gloves" }, { code: "gloves_rubber", label: "Rubber gloves" }, { code: "mask", label: "Mask" },
+    { code: "goggles", label: "Goggles" }, { code: "ear_plugs", label: "Ear plugs" }, { code: "helmet", label: "Helmet" }, { code: "shoe_covers", label: "Shoe covers" },
+  ];
+  /* HR register entries. */
+  const DISCIPLINE_LEVELS = [
+    { code: "verbal", label: "Verbal warning" }, { code: "written", label: "Written warning" }, { code: "refresher", label: "Refresher session" },
+    { code: "hr_action", label: "HR disciplinary action" }, { code: "deduction", label: "Salary deduction" },
+    { code: "investigation", label: "HR investigation" }, { code: "removal", label: "Removed from site" },
+  ];
   const ROLES = [
     { code: "supervisor", label: "Supervisor / Team Leader" },
     { code: "camp_boss", label: "Camp Boss" },
@@ -57,7 +79,15 @@ window.STD = (function () {
     { code: "admin", label: "Administrator" },
   ];
   return {
-    AREAS, ITEMS, CHECK_TYPES, ACTIONS, TARGETS, ROLES,
+    AREAS, ITEMS, CHECK_TYPES, ACTIONS, TARGETS, ROLES, INCIDENT_TYPES, BASELINE_ITEMS, DISCIPLINE_LEVELS,
+    incidentLabel: (code) => (INCIDENT_TYPES.find((i) => i.code === code) || {}).label || code,
+    baselineLabel: (code) => (BASELINE_ITEMS.find((i) => i.code === code) || {}).label || code,
+    levelLabel: (code) => (DISCIPLINE_LEVELS.find((i) => i.code === code) || {}).label || code,
+    /** Apply the rules saved by the administrator. */
+    applySettings(st) {
+      if (!st) return;
+      for (const k of Object.keys(TARGETS)) if (st[k] !== undefined && st[k] !== null) TARGETS[k] = typeof TARGETS[k] === "number" ? Number(st[k]) || TARGETS[k] : String(st[k]);
+    },
     itemsFor: (type) => ITEMS.filter((i) => i.checks.includes(type)),
     itemLabel: (code) => (ITEMS.find((i) => i.code === code) || {}).label || code,
     actionLabel: (code) => (ACTIONS.find((a) => a.code === code) || {}).label || "",

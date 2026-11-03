@@ -25,6 +25,8 @@
     if (!quiet) root.innerHTML = `<div class="loading">Loading…</div>`;
     try {
       F = await G.api("field", { site: localStorage.getItem(SITE_KEY) || "" });
+      F.incidents = F.incidents || [];
+      S.applySettings(F.settings);
       localStorage.setItem("abfm_grooming_user", JSON.stringify(F.user));
     } catch (e) {
       root.innerHTML = `<div class="m"><div class="m-body"><div class="flash err">${esc(e.message)}</div><button class="btn" onclick="location.reload()">Try again</button> <button class="btn ghost" onclick="G.logout()">Log out</button></div></div>`;
@@ -47,6 +49,8 @@
     else if (page === "submit") html = submitPage(q);
     else if (page === "supply") html = supplyPage();
     else if (page === "training") html = trainingPage();
+    else if (page === "baseline" && parts[1]) html = baselinePage(parts[1]);
+    else if (page === "incident") html = incidentPage(q);
     else html = today();
     root.innerHTML = `<div class="m">${html}</div>${tabs(page)}`;
     window.scrollTo(0, 0);
@@ -55,7 +59,7 @@
   function tabs(page) {
     const t = [
       ["#/", "Today", "🏠", page === ""], ["#/check/" + mainType(), "Staff", "✅", page === "check" || page === "submit"],
-      ["#/supply", "Supply", "📦", page === "supply"], ["#/training", "Training", "🎓", page === "training"],
+      ["#/supply", "Supply", "📦", page === "supply"], ["#/training", "Training", "🎓", page === "training" || page === "baseline"],
       F.user.manage ? ["admin.html", "Dashboard", "📊", false] : ["#/logout", "Log out", "↩︎", false],
     ];
     return `<div class="m-tabs"><nav>${t.map(([h, l, i, on]) => `<a href="${h}" class="${on ? "on" : ""}"><span class="ic">${i}</span>${l}</a>`).join("")}</nav></div>`;
@@ -100,6 +104,9 @@
     const greet = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
     const sub = F.submission;
     const left = staff.length - checked;
+    const nowHM = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Dubai", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date());
+    const overdue = !sub && nowHM > T.checklistDue;
+    const openInc = F.incidents.filter((x) => x.status !== "closed").length;
     return `
       <div class="hero">
         <div class="logo-row"><div class="hi">${greet}</div><a href="#/logout" class="small" style="opacity:.7">Log out</a></div>
@@ -108,13 +115,14 @@
         <div class="prog">
           <div class="ring" style="background:conic-gradient(var(--orange) 0 ${p}%, rgba(255,255,255,.18) ${p}% 100%)"><div>${checked}/${staff.length}</div></div>
           <div><div style="font-weight:600">${fmtDay(F.today)}</div>
-            <div class="small" style="opacity:.8;margin-top:3px">${checked} of ${staff.length} staff checked<br>${mt === "site" ? (sub ? `Checklist sent at ${esc(sub.time)}` : "Checklist due by end of day") : "Camp check before staff leave"}</div></div>
+            <div class="small" style="opacity:.8;margin-top:3px">${checked} of ${staff.length} staff checked<br>${mt === "site" ? (sub ? `Checklist sent at ${esc(sub.time)}${sub.time > T.checklistDue ? " (late)" : ""}` : overdue ? `<b style="color:#ffb59a">⚠ Checklist overdue (due ${esc(T.checklistDue)})</b>` : `Checklist due by ${esc(T.checklistDue)}`) : "Camp check before staff leave"}</div></div>
         </div>
       </div>
       <div class="m-body">
         ${types().includes("site") ? `<a href="#/check/site" class="card task"><div class="ico" style="background:var(--orange-soft)">✅</div><div class="grow"><b>Site check</b><span>${left ? `${left} staff left to check` : "Everyone checked"}</span></div>${left ? `<span class="chev">›</span>` : `<span class="pill green">Done</span>`}</a>` : ""}
         <a href="#/check/camp" class="card task" aria-disabled="${!types().includes("camp")}"><div class="ico" style="background:var(--blue-soft)">🏠</div><div class="grow"><b>Camp check</b><span>${camp ? `${camp} of ${staff.length} checked by the Camp Boss` : "Not done yet today"}</span></div>${camp >= staff.length && staff.length ? `<span class="pill green">Done</span>` : types().includes("camp") ? `<span class="chev">›</span>` : ""}</a>
         ${types().includes("field") ? `<a href="#/check/field" class="card task"><div class="ico" style="background:var(--amber-soft)">🔧</div><div class="grow"><b>Random field check</b><span>${field} done in the last 7 days (target ${T.fieldChecksPerWeek})</span></div>${field >= T.fieldChecksPerWeek ? `<span class="pill green">On target</span>` : `<span class="chev">›</span>`}</a>` : ""}
+        <a href="#/incident" class="card task"><div class="ico" style="background:var(--navy);color:#fff">📣</div><div class="grow"><b>Report an incident</b><span>${openInc ? `${plural(openInc, "open incident")} at this site` : "Difficult customer, complaint, serious conduct"}</span></div><span class="chev">›</span></a>
         <a href="#/supply" class="card task"><div class="ico" style="background:var(--red-soft)">📦</div><div class="grow"><b>Supply gaps</b><span>${F.supply.length ? `${plural(F.supply.length, "item")} waiting from Stores` : "Nothing waiting"}</span></div><span class="chev">›</span></a>
         ${types().includes("site") ? (sub ? `<a href="#/submit" class="btn ghost block mt-s">✓ Sent to Head Office at ${esc(sub.time)}. View</a>` : `<a href="#/submit" class="btn block mt-s ${left ? "ghost" : "navy"}">${left ? "Submit to Head Office (finish checks first)" : "Submit to Head Office"}</a>`) : ""}
         <p class="muted small mt" style="text-align:center"><a href="#/refresh">↻ Refresh</a></p>
@@ -323,17 +331,72 @@
   function trainingPage() {
     const done = F.staff.filter((e) => e.trained_on).length;
     const p = F.staff.length ? Math.round((100 * done) / F.staff.length) : 0;
+    const based = F.staff.filter((e) => e.baseline_on).length;
     const list = [...F.staff].sort((a, b) => Number(!!a.trained_on) - Number(!!b.trained_on) || a.name.localeCompare(b.name));
     return `
-      <div class="m-top"><a href="#/" class="back">‹ Today</a><h1>Toolbox talk training</h1>
+      <div class="m-top"><a href="#/" class="back">‹ Today</a><h1>Training & baseline</h1>
         <div class="muted small">Grooming, Etiquette & Work Standards. Target: 100% of staff by ${fmtDate(T.trainingDeadline, true)}.</div>
-        <div class="bar" style="height:8px"><i style="width:${p}%"></i></div><div class="small mt-s"><b>${done} of ${F.staff.length}</b> trained (${p}%)</div></div>
+        <div class="bar" style="height:8px"><i style="width:${p}%"></i></div><div class="small mt-s"><b>${done} of ${F.staff.length}</b> trained (${p}%) · <b>${based} of ${F.staff.length}</b> baseline checked</div></div>
       <div class="m-body">
-        <div class="flash info">Run the toolbox talk with the team, then mark each person who attended.</div>
+        <div class="flash info">Run the toolbox talk with the team, then mark each person who attended. <b>Baseline:</b> record each person's sizes and the PPE they hold; missing items go to Stores.</div>
         <div class="card emp-list">${list.map((e) => `
-          <div class="emp"><div class="avatar">${initials(e.name)}</div><div class="grow"><b>${esc(e.name)}</b><span>${esc(e.staff_no)} · ${e.trained_on ? `Trained ${fmtDate(e.trained_on)}` : "Not trained yet"}</span></div>
+          <div class="emp"><div class="avatar">${initials(e.name)}</div><div class="grow"><b>${esc(e.name)}</b><span>${esc(e.staff_no)} · ${e.trained_on ? `Trained ${fmtDate(e.trained_on)}` : "Not trained yet"}</span>
+              <a href="#/baseline/${e.id}" class="small ${e.baseline_on ? "muted" : "blue"}" style="display:block;margin-top:2px">${e.baseline_on ? `✓ Baseline ${fmtDate(e.baseline_on)} · update` : "+ Do baseline check"}</a></div>
             ${F.user.can.markTraining ? (e.trained_on ? `<button class="pill green" style="border:0;cursor:pointer" data-train="${e.id}" data-undo="1" title="Tap to undo">✓ Trained</button>` : `<button class="btn small" data-train="${e.id}">Mark trained</button>`) : ""}</div>`).join("")}
         </div>
+      </div>`;
+  }
+
+  // ---------------- baseline ----------------
+  function baselinePage(empId) {
+    const e = F.staff.find((x) => x.id === empId);
+    if (!e) return `<div class="m-body"><p class="muted">Employee not found.</p></div>`;
+    const held = new Set(e.baseline_on ? e.ppe_held : []);
+    return `
+      <div class="m-top"><a href="#/training" class="back">‹ Training & baseline</a>
+        <div class="row"><div class="avatar">${initials(e.name)}</div><div class="grow"><b style="font-size:16px">${esc(e.name)}</b><div class="muted small">${esc(e.staff_no)} · ${esc(e.trade)}${e.baseline_on ? ` · last baseline ${fmtDate(e.baseline_on)}` : ""}</div></div></div></div>
+      <div class="m-body">
+        <form id="baseline-form" data-id="${e.id}">
+          <div class="card sec"><h4><span>Sizes</span></h4>
+            <div class="grid-form"><label class="field">Uniform size<input type="text" name="uniform_size" value="${esc(e.uniform_size)}" placeholder="S, M, L, XL…"></label>
+            <label class="field">Shoe size<input type="text" name="shoe_size" value="${esc(e.shoe_size)}" inputmode="numeric"></label></div></div>
+          <div class="card sec"><h4><span>PPE and items held</span><span class="muted" style="letter-spacing:0">tick what they have</span></h4>
+            ${S.BASELINE_ITEMS.map((i) => `<label class="item row" style="cursor:pointer"><input type="checkbox" name="held" value="${i.code}" ${held.has(i.code) ? "checked" : ""} style="width:22px;height:22px;accent-color:var(--green)"><span class="lbl grow">${esc(i.label)}</span></label>`).join("")}
+          </div>
+          <div class="card sec"><h4><span>Other missing items</span></h4>
+            <textarea name="missing" placeholder="e.g. Second uniform set, winter jacket" style="width:100%">${esc(e.missing)}</textarea></div>
+          <label class="confirm"><input type="checkbox" name="request" checked> Send the unticked items to Stores as supply requests (dated today).</label>
+          <button class="btn block" type="submit">Save baseline</button>
+        </form>
+      </div>`;
+  }
+
+  // ---------------- incidents ----------------
+  function incidentPage(q) {
+    const list = [...F.incidents].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+    const type = S.INCIDENT_TYPES.find((t) => t.code === q.type) || S.INCIDENT_TYPES[0];
+    return `
+      <div class="m-top"><a href="#/" class="back">‹ Today</a><h1>Report an incident</h1>
+        <div class="muted small">${esc(site().name)} · the FM Manager is informed straight away.</div></div>
+      <div class="m-body">
+        <form id="incident-form">
+          <div class="card sec"><h4><span>What happened?</span></h4>
+            <div class="chips mb">${S.INCIDENT_TYPES.map((t) => `<button type="button" data-itype="${t.code}" class="chip ${t.code === type.code ? "on" : ""}">${esc(t.label)}</button>`).join("")}</div>
+            <input type="hidden" name="type" value="${type.code}">
+            <div class="hint mb" id="itype-hint">${esc(type.hint)}</div>
+            <div class="flash err" id="itype-warn" ${type.code === "serious_conduct" ? "" : "hidden"}>Remove the person from site now. HR investigates and the OCO is informed.</div>
+            <label class="field">Staff member involved (optional)<select name="employee_id"><option value="">– none –</option>${F.staff.map((e) => `<option value="${e.id}">${esc(e.name)} · ${esc(e.staff_no)}</option>`).join("")}</select></label>
+            <label class="field">Where (villa, flat, building)<input type="text" name="location" placeholder="e.g. Villa 21"></label>
+            <label class="field">What happened<textarea name="details" required placeholder="Short and factual"></textarea></label>
+            <label class="field">What was done<textarea name="action" placeholder="e.g. Stayed calm, called the supervisor"></textarea></label>
+          </div>
+          <button class="btn block" type="submit">Send report</button>
+        </form>
+        ${list.length ? `<div class="eyebrow" style="margin:18px 2px 8px">Recent at this site</div><div class="card">${list.map((x) => {
+          const e = F.staff.find((y) => y.id === x.employee_id);
+          return `<div class="gl"><div class="row between"><b>${esc(S.incidentLabel(x.type))}</b>${x.status === "closed" ? `<span class="pill green">Closed</span>` : x.status === "acknowledged" ? `<span class="pill blue">Seen by ${esc(x.ack_by)}</span>` : `<span class="pill amber">Open</span>`}</div>
+            <small>${fmtDate(x.date)} ${esc(x.time)} · ${esc(x.location || "")}${e ? ` · ${esc(e.name)}` : ""}</small><small>${esc(x.details)}</small></div>`;
+        }).join("")}</div>` : ""}
       </div>`;
   }
 
@@ -353,6 +416,15 @@
       else if (d.action) CF.items[d.action].action = d.v;
       else return;
       rerenderForm();
+      return;
+    }
+    if (b.dataset.itype) {
+      const f = b.closest("form");
+      const t = S.INCIDENT_TYPES.find((x) => x.code === b.dataset.itype);
+      f.querySelector("[name=type]").value = t.code;
+      f.querySelectorAll("[data-itype]").forEach((c) => c.classList.toggle("on", c === b));
+      f.querySelector("#itype-hint").textContent = t.hint;
+      f.querySelector("#itype-warn").hidden = t.code !== "serious_conduct";
       return;
     }
     if (b.dataset.issue) {
@@ -405,6 +477,30 @@
       G.busy(true);
       try { const out = await G.api("submitDay", { site_id: F.site }); F.submission = out.submission; location.hash = "#/submit?sent=1"; }
       catch (e) { G.toast(e.message, "err"); } finally { G.busy(false); }
+    }
+    if (f.id === "baseline-form") {
+      const d = G.formData(f);
+      const held = [].concat(d.held || []);
+      const req = d.request ? S.BASELINE_ITEMS.filter((i) => !held.includes(i.code)).map((i) => i.label) : [];
+      G.busy(true);
+      try {
+        const out = await G.api("saveBaseline", { employee_id: f.dataset.id, uniform_size: d.uniform_size, shoe_size: d.shoe_size, held, missing: d.missing, request: !!d.request, requestLabels: req });
+        const i = F.staff.findIndex((e) => e.id === f.dataset.id);
+        if (i >= 0 && out.employee) F.staff[i] = out.employee;
+        G.toast(out.requested ? `Baseline saved. ${plural(out.requested, "item")} sent to Stores.` : "Baseline saved.");
+        location.hash = "#/training";
+        load(true).catch(() => {});
+      } catch (e) { G.toast(e.message, "err"); } finally { G.busy(false); }
+    }
+    if (f.id === "incident-form") {
+      const d = G.formData(f);
+      G.busy(true);
+      try {
+        const out = await G.api("addIncident", { site_id: F.site, ...d });
+        F.incidents.push(out.incident);
+        G.toast("Incident reported.");
+        location.hash = "#/";
+      } catch (e) { G.toast(e.message, "err"); } finally { G.busy(false); }
     }
     if (f.id === "supply-form") {
       const d = G.formData(f);

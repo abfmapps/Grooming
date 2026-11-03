@@ -12,6 +12,8 @@
  *     Allow the permissions it asks for (Sheets, and Drive for photos).
  *  5. Copy the Web app URL into config.js in the GitHub repo.
  *  Optional: to try it with made-up data, choose loadDemoData in the function list and press ▶ Run.
+ *  Optional: daily email summary to managers. Choose setupDailyEmail in the function list and press ▶ Run once
+ *  (it asks for permission to send email). Change the time or turn it off in the dashboard: Sites & users → Rules.
  *  When you change this script later: Deploy → Manage deployments → ✏️ → Version: New version → Deploy
  *  (keeps the same URL).
  */
@@ -23,14 +25,28 @@ const SESSION_DAYS = 14;
 /* ---------------- tables ---------------- */
 const TABLES = {
   Sites: ["id", "name", "active"],
-  Users: ["id", "username", "name", "role", "pin", "sites", "active"],
-  Employees: ["id", "staff_no", "name", "trade", "site_id", "uniform_size", "shoe_size", "trained_on", "active"],
+  Users: ["id", "username", "name", "role", "pin", "sites", "active", "email"],
+  Employees: ["id", "staff_no", "name", "trade", "site_id", "uniform_size", "shoe_size", "trained_on", "active", "baseline_on", "ppe_held", "missing"],
   Checks: ["id", "date", "type", "employee_id", "site_id", "status", "finding_no", "gaps", "note", "photo", "by", "time"],
   Supply: ["id", "employee_id", "site_id", "item", "requested_on", "issued_on", "check_id", "by"],
   Submissions: ["site_id", "date", "by", "time", "total", "passed", "gaps", "supply", "absent"],
   Audits: ["id", "site_id", "date", "auditor", "with_hse", "sample", "s_grooming", "s_ppe", "s_comm", "s_control", "notes", "report_on", "plan_on", "verified_on"],
   Actions: ["id", "audit_id", "finding", "employee_id", "action", "owner", "due_on", "closed_on"],
+  Incidents: ["id", "date", "time", "site_id", "employee_id", "type", "location", "details", "action", "reported_by", "status", "ack_by", "ack_on", "closed_on", "outcome"],
+  Discipline: ["id", "employee_id", "site_id", "date", "level", "action", "amount", "notes", "by"],
+  Activity: ["time", "user", "role", "action", "details"],
+  Settings: ["key", "value"],
 };
+
+/** Rules the dashboard can change (Sites & users → Rules). Values are kept in the Settings tab. */
+const SETTING_DEFAULTS = {
+  auditPass: 85, findingCloseDays: 7, reportDays: 2, planDays: 3, reauditDays: 14, fieldChecksPerWeek: 3,
+  supplyWorkingDays: 5, warningWindowDays: 90, trainingDeadline: "2026-11-25", checklistDue: "18:00",
+  deductRepeat: "", deductFurther: "", digestOn: "0", digestHour: 19, dashboardUrl: "",
+};
+const INCIDENT_TYPES = ["difficult_customer", "complaint", "serious_conduct", "damage", "other"];
+const DISCIPLINE_LEVELS = ["verbal", "written", "refresher", "hr_action", "deduction", "removal", "investigation"];
+const BASELINE_ITEMS = ["uniform", "id_card", "shoes", "gloves_fabric", "gloves_rubber", "mask", "goggles", "ear_plugs", "helmet", "shoe_covers"];
 
 const ROLES = {
   supervisor: { field: true, manage: false, all: false },
@@ -51,11 +67,16 @@ const CAN = {
   manageStaff: (u) => ["admin", "hr", "director"].indexOf(u.role) >= 0,
   manageUsers: (u) => ["admin", "director"].indexOf(u.role) >= 0,
   markTraining: (u) => u.role !== "stores",
+  discipline: (u) => ["hr", "director", "admin", "fm_manager"].indexOf(u.role) >= 0,
+  incidents: (u) => ["fm_manager", "oco", "hse", "hr", "director", "admin"].indexOf(u.role) >= 0,
+  activity: (u) => ["admin", "director", "oco", "hr"].indexOf(u.role) >= 0,
+  settings: (u) => ["admin", "director"].indexOf(u.role) >= 0,
   checkTypes: (u) => (u.role === "camp_boss" ? ["camp"] : u.role === "admin" ? ["site", "camp", "field"] : ["site", "field"]),
 };
 
 /* ---------------- sheet helpers ---------------- */
 const cache_ = {};
+const checked_ = {};
 function sheet_(name) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sh = ss.getSheetByName(name);
@@ -64,7 +85,16 @@ function sheet_(name) {
     sh.getRange(1, 1, 2000, TABLES[name].length).setNumberFormat("@");   // keep everything as plain text
     sh.getRange(1, 1, 1, TABLES[name].length).setValues([TABLES[name]]);
     sh.setFrozenRows(1);
+  } else if (!checked_[name]) {
+    // Older sheets: add any new columns to the header row.
+    const n = TABLES[name].length;
+    const head = sh.getRange(1, 1, 1, n).getValues()[0].map(norm_);
+    if (head.join("|") !== TABLES[name].join("|")) {
+      sh.getRange(1, 1, Math.max(2, sh.getMaxRows()), n).setNumberFormat("@");
+      sh.getRange(1, 1, 1, n).setValues([TABLES[name]]);
+    }
   }
+  checked_[name] = true;
   return sh;
 }
 function norm_(v) {
@@ -129,6 +159,17 @@ function clip_(v, n) { return String(v == null ? "" : v).trim().slice(0, n); }
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 function fail_(msg) { const e = new Error(msg); e.user = true; throw e; }
 
+function settings_() {
+  if (cache_._settings) return cache_._settings;
+  const out = Object.assign({}, SETTING_DEFAULTS);
+  rows_("Settings").forEach((r) => {
+    if (!SETTING_DEFAULTS.hasOwnProperty(r.key)) return;
+    out[r.key] = typeof SETTING_DEFAULTS[r.key] === "number" ? Number(r.value) || SETTING_DEFAULTS[r.key] : r.value;
+  });
+  return (cache_._settings = out);
+}
+const isDate_ = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ""));
+
 /* ---------------- PINs and sessions ---------------- */
 function hex_(bytes) { return bytes.map((b) => ("0" + (b & 0xff).toString(16)).slice(-2)).join(""); }
 function hashPin_(pin, salt) {
@@ -168,7 +209,9 @@ function publicUser_(u) {
   return {
     id: u.id, username: u.username, name: u.name, role: u.role, field: r.field, manage: r.manage,
     siteIds: r.all ? active : own.filter((s) => active.indexOf(s) >= 0),
-    can: { audit: CAN.audit(u), closeActions: CAN.closeActions(u), issueSupply: CAN.issueSupply(u), manageStaff: CAN.manageStaff(u), manageUsers: CAN.manageUsers(u), markTraining: CAN.markTraining(u), checkTypes: CAN.checkTypes(u) },
+    email: u.email || "",
+    can: { audit: CAN.audit(u), closeActions: CAN.closeActions(u), issueSupply: CAN.issueSupply(u), manageStaff: CAN.manageStaff(u), manageUsers: CAN.manageUsers(u), markTraining: CAN.markTraining(u), checkTypes: CAN.checkTypes(u),
+      discipline: CAN.discipline(u), incidents: CAN.incidents(u), activity: CAN.activity(u), settings: CAN.settings(u) },
   };
 }
 function siteOk_(u, siteId) { if (u.siteIds.indexOf(String(siteId)) < 0) fail_("site"); }
@@ -179,16 +222,18 @@ function doGet() { return json_({ ok: true, app: "ABFM Grooming backend" }); }
 function doPost(e) {
   let b = {};
   try { b = JSON.parse(e.postData.contents); } catch (err) { return json_({ ok: false, error: "bad" }); }
-  const write = WRITES.hasOwnProperty(b.action);
+  const fnName = String(b.fn || b.action || "");      // "fn" names the function; older pages sent "action"
+  const write = WRITES.hasOwnProperty(fnName);
   const lock = write ? LockService.getScriptLock() : null;
   try {
     if (lock) lock.waitLock(20000);
     ensureAdmin_();
-    if (b.action === "login") return json_(login_(b));
+    if (fnName === "login") return json_(login_(b));
     const u = userFromToken_(b.token);
-    const fn = READS[b.action] || WRITES[b.action];
+    const fn = READS.hasOwnProperty(fnName) ? READS[fnName] : WRITES.hasOwnProperty(fnName) ? WRITES[fnName] : null;
     if (!fn) return json_({ ok: false, error: "unknown" });
     const out = fn(u, b) || {};
+    if (write) log_(u, fnName, b, out);
     out.ok = true;
     return json_(out);
   } catch (err) {
@@ -223,17 +268,18 @@ const READS = {
     const sites = rows_("Sites").filter((s) => u.siteIds.indexOf(s.id) >= 0).map(site_);
     const siteId = u.siteIds.indexOf(String(b.site)) >= 0 ? String(b.site) : u.siteIds[0];
     const today = today_();
-    const out = { user: u, sites: sites, today: today, site: siteId || null };
+    const out = { user: u, sites: sites, today: today, site: siteId || null, settings: settings_() };
     if (!siteId) return out;
     const staff = rows_("Employees").filter((e) => e.site_id === siteId && e.active === "1");
     const ids = {};
     staff.forEach((e) => (ids[e.id] = true));
-    const from = addDays_(today, -90);
+    const from = addDays_(today, -settings_().warningWindowDays);
     out.staff = staff.map(emp_);
     out.checks = rows_("Checks").filter((c) => c.site_id === siteId && c.date >= addDays_(today, -6)).map(check_);
     out.findings = findings_(ids, from, today);
     out.supply = rows_("Supply").filter((g) => g.site_id === siteId && !g.issued_on).map(supply_);
     out.submission = rows_("Submissions").filter((s) => s.site_id === siteId && s.date === today).map(sub_)[0] || null;
+    out.incidents = rows_("Incidents").filter((x) => x.site_id === siteId && (!x.closed_on || x.date >= addDays_(today, -6))).map(incident_);
     return out;
   },
 
@@ -259,11 +305,26 @@ const READS = {
       audits: audits.map(audit_),
       actions: rows_("Actions").filter((x) => auditIds[x.audit_id]).map(action_),
       managers: rows_("Users").filter((x) => x.role === "fm_manager" && x.active === "1").map((x) => ({ name: x.name, sites: String(x.sites).split(",").filter(Boolean) })),
+      incidents: rows_("Incidents").filter((x) => mine[x.site_id]).map(incident_),
+      discipline: rows_("Discipline").filter((x) => mine[x.site_id]).map(discipline_),
+      settings: settings_(),
     };
     if (u.can.manageUsers) {
-      out.users = rows_("Users").map((x) => ({ id: x.id, username: x.username, name: x.name, role: x.role, sites: String(x.sites).split(",").filter(Boolean), active: x.active === "1" }));
+      out.users = rows_("Users").map((x) => ({ id: x.id, username: x.username, name: x.name, role: x.role, email: x.email || "", sites: String(x.sites).split(",").filter(Boolean), active: x.active === "1" }));
     }
     return out;
+  },
+
+  /** Latest entries of the activity log (who did what). */
+  activity: function (u, b) {
+    if (!u.can.activity) fail_("role");
+    const sh = sheet_("Activity");
+    const last = sh.getLastRow();
+    const n = Math.min(Math.max(50, Number(b.limit) || 500), 3000);
+    if (last < 2) return { activity: [] };
+    const start = Math.max(2, last - n + 1);
+    const vals = sh.getRange(start, 1, last - start + 1, TABLES.Activity.length).getValues();
+    return { activity: vals.reverse().map((r) => ({ time: norm_(r[0]), user: norm_(r[1]), role: norm_(r[2]), action: norm_(r[3]), details: norm_(r[4]) })) };
   },
 
   photo: function (u, b) {
@@ -276,7 +337,9 @@ const READS = {
 };
 
 function site_(s) { return { id: s.id, name: s.name, active: s.active === "1" }; }
-function emp_(e) { return { id: e.id, staff_no: e.staff_no, name: e.name, trade: e.trade, site_id: e.site_id, uniform_size: e.uniform_size, shoe_size: e.shoe_size, trained_on: e.trained_on || null, active: e.active === "1" }; }
+function emp_(e) { return { id: e.id, staff_no: e.staff_no, name: e.name, trade: e.trade, site_id: e.site_id, uniform_size: e.uniform_size, shoe_size: e.shoe_size, trained_on: e.trained_on || null, active: e.active === "1", baseline_on: e.baseline_on || null, ppe_held: String(e.ppe_held || "").split(",").filter(Boolean), missing: e.missing || "" }; }
+function incident_(x) { return { id: x.id, date: x.date, time: x.time, site_id: x.site_id, employee_id: x.employee_id || null, type: x.type, location: x.location, details: x.details, action: x.action, reported_by: x.reported_by, status: x.closed_on ? "closed" : x.ack_on ? "acknowledged" : "open", ack_by: x.ack_by, ack_on: x.ack_on || null, closed_on: x.closed_on || null, outcome: x.outcome }; }
+function discipline_(x) { return { id: x.id, employee_id: x.employee_id, site_id: x.site_id, date: x.date, level: x.level, action: x.action, amount: x.amount ? Number(x.amount) : null, notes: x.notes, by: x.by }; }
 function check_(c) { return { id: c.id, date: c.date, type: c.type, employee_id: c.employee_id, site_id: c.site_id, status: c.status, finding_no: c.finding_no ? Number(c.finding_no) : null, gaps: parseGaps_(c.gaps), note: c.note, photo: c.photo || null, by: c.by, time: c.time }; }
 function supply_(g) { return { id: g.id, employee_id: g.employee_id, site_id: g.site_id, item: g.item, requested_on: g.requested_on, issued_on: g.issued_on || null }; }
 function sub_(s) { return { site_id: s.site_id, date: s.date, by: s.by, time: s.time, total: +s.total, passed: +s.passed, gaps: +s.gaps, supply: +s.supply, absent: +s.absent }; }
@@ -327,7 +390,7 @@ const WRITES = {
     if (status === "gaps") {
       const ids = {};
       ids[emp.id] = true;
-      const prior = findings_(ids, addDays_(today, -90), today)[emp.id] || [];
+      const prior = findings_(ids, addDays_(today, -settings_().warningWindowDays), today)[emp.id] || [];
       findingNo = String(prior.filter((d) => d !== today).length + 1);   // one finding per day at most
     }
     let photo = existing ? existing.photo : "";
@@ -411,7 +474,7 @@ const WRITES = {
     (Array.isArray(b.findings) ? b.findings.slice(0, 30) : []).forEach((f) => {
       const finding = clip_(f.finding, 300);
       if (!finding) return;
-      insert_("Actions", { id: id_(), audit_id: a.id, finding: finding, employee_id: clip_(f.employee_id, 20), action: clip_(f.action, 300), owner: clip_(f.owner, 80), due_on: /^\d{4}-\d{2}-\d{2}$/.test(f.due_on || "") ? f.due_on : addDays_(date, 7), closed_on: "" });
+      insert_("Actions", { id: id_(), audit_id: a.id, finding: finding, employee_id: clip_(f.employee_id, 20), action: clip_(f.action, 300), owner: clip_(f.owner, 80), due_on: /^\d{4}-\d{2}-\d{2}$/.test(f.due_on || "") ? f.due_on : addDays_(date, settings_().findingCloseDays), closed_on: "" });
     });
     return { id: a.id };
   },
@@ -434,7 +497,7 @@ const WRITES = {
     siteOk_(u, a.site_id);
     const finding = clip_(b.finding, 300);
     if (!finding) fail_("finding");
-    insert_("Actions", { id: id_(), audit_id: a.id, finding: finding, employee_id: clip_(b.employee_id, 20), action: clip_(b.action, 300), owner: clip_(b.owner, 80), due_on: /^\d{4}-\d{2}-\d{2}$/.test(b.due_on || "") ? b.due_on : addDays_(a.date, 7), closed_on: "" });
+    insert_("Actions", { id: id_(), audit_id: a.id, finding: finding, employee_id: clip_(b.employee_id, 20), action: clip_(b.action, 300), owner: clip_(b.owner, 80), due_on: /^\d{4}-\d{2}-\d{2}$/.test(b.due_on || "") ? b.due_on : addDays_(a.date, settings_().findingCloseDays), closed_on: "" });
   },
 
   toggleAction: function (u, b) {
@@ -469,12 +532,15 @@ const WRITES = {
     const pin = String(b.pin || "");
     if (pin && !/^\d{4,8}$/.test(pin)) fail_("pin_format");
     const sites = (Array.isArray(b.sites) ? b.sites : []).map(String).filter((s) => rows_("Sites").some((x) => x.id === s)).join(",");
+    const email = clip_(b.email, 120);
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail_("email");
     if (b.id) {
       const x = rows_("Users").filter((y) => y.id === String(b.id))[0];
       if (!x) fail_("notfound");
       x.name = clip_(b.name, 80) || x.name;
       x.role = b.role;
       x.sites = sites;
+      if (b.email !== undefined) x.email = email;
       if (b.active !== undefined) {
         if (x.id === u.id && !b.active) fail_("self");
         x.active = b.active ? "1" : "0";
@@ -487,7 +553,7 @@ const WRITES = {
     if (!username || !clip_(b.name, 80)) fail_("name");
     if (!pin) fail_("pin_format");
     if (rows_("Users").some((y) => y.username.toLowerCase() === username)) fail_("exists");
-    insert_("Users", { id: id_(), username: username, name: clip_(b.name, 80), role: b.role, pin: hashPin_(pin), sites: sites, active: "1" });
+    insert_("Users", { id: id_(), username: username, name: clip_(b.name, 80), role: b.role, pin: hashPin_(pin), sites: sites, active: "1", email: email });
   },
 
   /** Any user can change their own PIN. */
@@ -541,7 +607,223 @@ const WRITES = {
     insertMany_("Employees", fresh);
     return { added: added, updated: updated, skipped: skipped };
   },
+
+  saveSettings: function (u, b) {
+    if (!u.can.settings) fail_("role");
+    const vals = b.settings || {};
+    const cur = rows_("Settings");
+    Object.keys(SETTING_DEFAULTS).forEach((k) => {
+      if (!vals.hasOwnProperty(k)) return;
+      let v = vals[k];
+      if (typeof SETTING_DEFAULTS[k] === "number") {
+        v = Math.round(Number(v));
+        if (!(v >= 0 && v <= 365)) fail_("setting");
+      } else if (k === "trainingDeadline") { if (v && !isDate_(v)) fail_("setting"); }
+      else if (k === "checklistDue") { if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(v))) fail_("setting"); }
+      else if (k === "deductRepeat" || k === "deductFurther") { v = String(v).trim(); if (v && !(Number(v) >= 0)) fail_("setting"); }
+      else if (k === "digestOn") v = v === true || v === "1" ? "1" : "0";
+      else v = clip_(v, 300);
+      const row = cur.filter((r) => r.key === k)[0];
+      if (row) { row.value = String(v); update_("Settings", row); } else insert_("Settings", { key: k, value: String(v) });
+    });
+    delete cache_._settings;
+    if (vals.hasOwnProperty("digestOn") || vals.hasOwnProperty("digestHour")) {
+      try { scheduleDigest_(); } catch (e) { return { settings: settings_(), warning: "email" }; }
+    }
+    return { settings: settings_() };
+  },
+
+  addIncident: function (u, b) {
+    siteOk_(u, b.site_id);
+    if (INCIDENT_TYPES.indexOf(b.type) < 0) fail_("bad");
+    const details = clip_(b.details, 2000);
+    if (!details) fail_("details");
+    let emp = "";
+    if (b.employee_id) {
+      const e = rows_("Employees").filter((x) => x.id === String(b.employee_id))[0];
+      if (!e || e.site_id !== String(b.site_id)) fail_("notfound");
+      emp = e.id;
+    }
+    const x = insert_("Incidents", {
+      id: id_(), date: today_(), time: now_(), site_id: String(b.site_id), employee_id: emp, type: b.type,
+      location: clip_(b.location, 200), details: details, action: clip_(b.action, 1000), reported_by: u.name,
+      status: "open", ack_by: "", ack_on: "", closed_on: "", outcome: "",
+    });
+    return { incident: incident_(x) };
+  },
+
+  updateIncident: function (u, b) {
+    if (!u.can.incidents) fail_("role");
+    const x = rows_("Incidents").filter((y) => y.id === String(b.id))[0];
+    if (!x) fail_("notfound");
+    siteOk_(u, x.site_id);
+    if (b.op === "ack") { x.ack_by = u.name; x.ack_on = today_(); }
+    else if (b.op === "close") { if (!x.ack_on) { x.ack_by = u.name; x.ack_on = today_(); } x.closed_on = today_(); x.outcome = clip_(b.outcome, 1000); }
+    else if (b.op === "reopen") { x.closed_on = ""; }
+    else fail_("bad");
+    update_("Incidents", x);
+  },
+
+  addDiscipline: function (u, b) {
+    if (!u.can.discipline) fail_("role");
+    if (DISCIPLINE_LEVELS.indexOf(b.level) < 0) fail_("bad");
+    if (u.role === "fm_manager" && ["verbal", "written", "refresher"].indexOf(b.level) < 0) fail_("role");
+    const e = rows_("Employees").filter((x) => x.id === String(b.employee_id))[0];
+    if (!e) fail_("notfound");
+    siteOk_(u, e.site_id);
+    const amount = String(b.amount || "").trim();
+    if (amount && !(Number(amount) >= 0)) fail_("amount");
+    insert_("Discipline", {
+      id: id_(), employee_id: e.id, site_id: e.site_id, date: isDate_(b.date) && b.date <= today_() ? b.date : today_(),
+      level: b.level, action: clip_(b.action, 300), amount: amount, notes: clip_(b.notes, 1000), by: u.name,
+    });
+  },
+
+  deleteDiscipline: function (u, b) {
+    if (!u.can.discipline) fail_("role");
+    const x = rows_("Discipline").filter((y) => y.id === String(b.id))[0];
+    if (!x) fail_("notfound");
+    siteOk_(u, x.site_id);
+    sheet_("Discipline").deleteRow(x._row);
+    delete cache_.Discipline;
+  },
+
+  /** Baseline check: sizes, PPE held and missing items. Missing PPE can go straight to the supply list. */
+  saveBaseline: function (u, b) {
+    if (!u.field && !u.can.manageStaff) fail_("role");
+    const e = rows_("Employees").filter((x) => x.id === String(b.employee_id))[0];
+    if (!e) fail_("notfound");
+    siteOk_(u, e.site_id);
+    const held = (Array.isArray(b.held) ? b.held : []).filter((c) => BASELINE_ITEMS.indexOf(c) >= 0);
+    e.uniform_size = clip_(b.uniform_size, 10);
+    e.shoe_size = clip_(b.shoe_size, 10);
+    e.ppe_held = held.join(",");
+    e.missing = clip_(b.missing, 500);
+    e.baseline_on = today_();
+    update_("Employees", e);
+    let requested = 0;
+    if (b.request) {
+      (Array.isArray(b.requestLabels) ? b.requestLabels : []).slice(0, 20).forEach((label) => {
+        label = clip_(label, 80);
+        if (!label) return;
+        if (rows_("Supply").some((g) => g.employee_id === e.id && g.item === label && !g.issued_on)) return;
+        insert_("Supply", { id: id_(), employee_id: e.id, site_id: e.site_id, item: label, requested_on: today_(), issued_on: "", check_id: "", by: u.name });
+        requested++;
+      });
+    }
+    return { employee: emp_(e), requested: requested };
+  },
+
+  /** Send the daily summary to me now (to test the email). */
+  testDigest: function (u) {
+    const me = rows_("Users").filter((x) => x.id === u.id)[0];
+    if (!me.email) fail_("no_email");
+    sendDigestTo_(me, true);
+  },
 };
+
+/* ---------------- activity log ---------------- */
+function log_(u, fn, b, out) {
+  const name = (id, table) => { const r = id ? rows_(table).filter((x) => x.id === String(id))[0] : null; return r ? r.name : ""; };
+  let d = "";
+  try {
+    switch (fn) {
+      case "saveCheck": d = name(b.employee_id, "Employees") + " · " + b.type + " check · " + (out.check ? out.check.status : ""); break;
+      case "submitDay": d = name(b.site_id, "Sites"); break;
+      case "addSupply": d = name(b.employee_id, "Employees") + " · " + clip_(b.item, 60); break;
+      case "issueSupply": { const g = rows_("Supply").filter((x) => x.id === String(b.id))[0]; d = g ? name(g.employee_id, "Employees") + " · " + g.item : "id " + b.id; break; }
+      case "toggleAction": { const x = rows_("Actions").filter((y) => y.id === String(b.id))[0]; d = (x ? x.finding : "id " + b.id) + (b.reopen ? " · reopened" : " · closed"); break; }
+      case "auditStep": { const a = rows_("Audits").filter((y) => y.id === String(b.id))[0]; d = (a ? name(a.site_id, "Sites") + " audit " + a.date : "id " + b.id) + " · " + b.step + (b.undo ? " undone" : ""); break; }
+      case "updateIncident": { const x = rows_("Incidents").filter((y) => y.id === String(b.id))[0]; d = (x ? name(x.site_id, "Sites") + " · " + x.type + (x.employee_id ? " · " + name(x.employee_id, "Employees") : "") : "id " + b.id) + " · " + b.op; break; }
+      case "deleteDiscipline": d = "entry " + b.id; break;
+      case "trained": d = name(b.employee_id, "Employees") + (b.undo ? " · undone" : ""); break;
+      case "createAudit": d = name(b.site_id, "Sites") + " · " + ((+b.s_grooming || 0) + (+b.s_ppe || 0) + (+b.s_comm || 0) + (+b.s_control || 0)); break;
+      case "addAction": d = clip_(b.finding, 80); break;
+      case "saveSite": d = clip_(b.name, 60) || ("id " + b.id); break;
+      case "saveUser": d = clip_(b.username || b.name, 60) + (b.pin ? " · PIN set" : "") + (b.active !== undefined ? (b.active ? " · activated" : " · deactivated") : ""); break;
+      case "changePin": d = "own PIN"; break;
+      case "saveEmployee": d = clip_(b.staff_no, 30) + " " + clip_(b.name, 60); break;
+      case "importEmployees": d = (out.added || 0) + " added, " + (out.updated || 0) + " updated"; break;
+      case "saveSettings": d = Object.keys(b.settings || {}).join(", "); break;
+      case "addIncident": d = name(b.site_id, "Sites") + " · " + b.type; break;
+      case "addDiscipline": d = name(b.employee_id, "Employees") + " · " + b.level + (b.amount ? " · AED " + b.amount : ""); break;
+      case "saveBaseline": d = name(b.employee_id, "Employees"); break;
+      default: d = "";
+    }
+  } catch (e) { d = ""; }
+  insert_("Activity", { time: Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd HH:mm"), user: u.name, role: u.role, action: fn, details: clip_(d, 300) });
+}
+
+/* ---------------- daily email summary ---------------- */
+/** Run once from the editor to allow email and start the daily summary. */
+function setupDailyEmail() {
+  const cur = rows_("Settings").filter((r) => r.key === "digestOn")[0];
+  if (cur) { cur.value = "1"; update_("Settings", cur); } else insert_("Settings", { key: "digestOn", value: "1" });
+  delete cache_._settings;
+  scheduleDigest_();
+  return "Daily email summary turned on at " + settings_().digestHour + ":00 Dubai time. Managers with an email address will receive it.";
+}
+function scheduleDigest_() {
+  ScriptApp.getProjectTriggers().forEach((t) => { if (t.getHandlerFunction() === "sendDailyDigest") ScriptApp.deleteTrigger(t); });
+  const st = settings_();
+  if (st.digestOn === "1") ScriptApp.newTrigger("sendDailyDigest").timeBased().everyDays(1).atHour(Math.min(23, Math.max(0, st.digestHour))).inTimezone(TZ).create();
+}
+function sendDailyDigest() {
+  if (settings_().digestOn !== "1") return;
+  rows_("Users").filter((x) => x.active === "1" && x.email && (ROLES[x.role] || {}).manage).forEach((x) => {
+    if (MailApp.getRemainingDailyQuota() < 1) return;
+    try { sendDigestTo_(x, false); } catch (e) { console.error(e); }
+  });
+}
+/** Builds and sends one person's summary for their sites. Quiet days send nothing unless forced. */
+function sendDigestTo_(user, force) {
+  const u = publicUser_(user);
+  const st = settings_();
+  const today = today_();
+  const mine = {};
+  u.siteIds.forEach((s) => (mine[s] = true));
+  const sites = rows_("Sites").filter((s) => mine[s.id]);
+  const siteName = (id) => (sites.filter((s) => s.id === id)[0] || {}).name || "";
+  const staffBySite = {};
+  rows_("Employees").forEach((e) => { if (e.active === "1" && mine[e.site_id]) staffBySite[e.site_id] = (staffBySite[e.site_id] || 0) + 1; });
+  const subs = rows_("Submissions").filter((x) => x.date === today && mine[x.site_id]);
+  const notSent = sites.filter((s) => staffBySite[s.id] && !subs.some((x) => x.site_id === s.id)).map((s) => s.name);
+  const late = subs.filter((x) => x.time > st.checklistDue).map((x) => siteName(x.site_id) + " (" + x.time + ")");
+  const audits = rows_("Audits").filter((a) => mine[a.site_id]);
+  const auditById = {};
+  audits.forEach((a) => (auditById[a.id] = a));
+  const overdue = rows_("Actions").filter((x) => !x.closed_on && auditById[x.audit_id] && x.due_on < today)
+    .map((x) => siteName(auditById[x.audit_id].site_id) + ": " + x.finding + " (due " + x.due_on + ", " + x.owner + ")");
+  const incidents = rows_("Incidents").filter((x) => mine[x.site_id] && !x.closed_on);
+  const serious = incidents.filter((x) => x.type === "serious_conduct").map((x) => siteName(x.site_id) + ": " + x.details.slice(0, 80));
+  const findingsToday = rows_("Checks").filter((c) => c.date === today && mine[c.site_id] && c.status === "gaps").length;
+  const supplyOld = rows_("Supply").filter((g) => mine[g.site_id] && !g.issued_on && workingDays_(g.requested_on, today) > st.supplyWorkingDays).length;
+  const failing = sites.map((s) => audits.filter((a) => a.site_id === s.id).sort((a, b) => (a.date < b.date ? 1 : -1))[0]).filter((a) => a && (+a.s_grooming + +a.s_ppe + +a.s_comm + +a.s_control) < st.auditPass)
+    .map((a) => siteName(a.site_id) + " (" + (+a.s_grooming + +a.s_ppe + +a.s_comm + +a.s_control) + ", re-audit by " + addDays_(a.date, st.reauditDays) + ")");
+  const items = notSent.length + late.length + overdue.length + incidents.length + supplyOld + failing.length;
+  if (!items && !force) return;
+  const li = (list) => "<ul>" + list.slice(0, 15).map((t) => "<li>" + esc_(t) + "</li>").join("") + (list.length > 15 ? "<li>… and " + (list.length - 15) + " more</li>" : "") + "</ul>";
+  const sec = (title, list) => (list.length ? "<h3 style=\"font:600 15px Arial;color:#333447;margin:18px 0 4px\">" + esc_(title) + " (" + list.length + ")</h3>" + li(list) : "");
+  const html = "<div style=\"font:14px Arial;color:#2b2c3a;max-width:640px\">" +
+    "<p style=\"color:#e8622a;font:600 11px Arial;letter-spacing:.12em;text-transform:uppercase\">Al Bonian FM · Grooming Control</p>" +
+    "<h2 style=\"color:#333447;margin:4px 0 12px\">Daily summary, " + today + "</h2>" +
+    "<p>" + findingsToday + " daily-check finding(s) recorded today across your " + sites.length + " site(s).</p>" +
+    sec("Checklists not sent today", notSent) + sec("Checklists sent after " + st.checklistDue, late) +
+    sec("Serious conduct incidents open", serious) + sec("Audit actions past their due date", overdue) +
+    sec("Sites below the audit pass mark", failing) +
+    (incidents.length ? "<p>Open incidents: <b>" + incidents.length + "</b></p>" : "") +
+    (supplyOld ? "<p>Supply gaps waiting more than " + st.supplyWorkingDays + " working days: <b>" + supplyOld + "</b></p>" : "") +
+    (!items ? "<p>Nothing needs attention today.</p>" : "") +
+    (st.dashboardUrl ? "<p><a href=\"" + esc_(st.dashboardUrl) + "\" style=\"background:#333447;color:#fff;padding:9px 14px;border-radius:8px;text-decoration:none\">Open the dashboard</a></p>" : "") +
+    "<p style=\"color:#6b6c7a;font-size:12px\">You receive this because you have a manager login with this email address. An administrator can turn it off under Sites & users → Rules.</p></div>";
+  MailApp.sendEmail({ to: user.email, subject: "Grooming Control: daily summary " + today + (items ? " (" + items + " to review)" : ""), htmlBody: html, name: "ABFM Grooming Control" });
+}
+function esc_(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function workingDays_(a, b) {
+  let n = 0;
+  for (let d = a; d < b; d = addDays_(d, 1)) { const w = new Date(d + "T12:00:00Z").getUTCDay(); if (w !== 0 && w !== 6) n++; }
+  return n;
+}
 
 function savePhoto_(dataUrl, emp) {
   const m = dataUrl.match(/^data:(image\/\w+);base64,(.*)$/);
@@ -600,7 +882,8 @@ function loadDemoData() {
       do name = pick(FIRST) + " " + pick(LAST); while (used[name]);
       used[name] = true;
       const careless = rnd() < 0.12;
-      emps.push({ id: id_(), staff_no: "ABFM-" + no++, name: name, trade: pick(TRADES), site_id: siteId[s[0]], uniform_size: pick(["S", "M", "M", "L", "L", "XL", "XXL"]), shoe_size: String(39 + Math.floor(rnd() * 6)), trained_on: rnd() < (s[2] > 0.95 ? 0.95 : 0.7) ? addDays_(today, -1 - Math.floor(rnd() * 25)) : "", active: "1", _site: s[0], _care: careless ? s[2] - 0.12 : s[2] + (1 - s[2]) * 0.5 });
+      emps.push({ id: id_(), staff_no: "ABFM-" + no++, name: name, trade: pick(TRADES), site_id: siteId[s[0]], uniform_size: pick(["S", "M", "M", "L", "L", "XL", "XXL"]), shoe_size: String(39 + Math.floor(rnd() * 6)), trained_on: rnd() < (s[2] > 0.95 ? 0.95 : 0.7) ? addDays_(today, -1 - Math.floor(rnd() * 25)) : "", active: "1",
+        baseline_on: rnd() < 0.85 ? addDays_(today, -20 - Math.floor(rnd() * 8)) : "", ppe_held: "", missing: "", _site: s[0], _care: careless ? s[2] - 0.12 : s[2] + (1 - s[2]) * 0.5 });
     }
   });
   const checks = [], supply = [], subs = [], findDates = {}, openGap = {};
@@ -644,7 +927,7 @@ function loadDemoData() {
       staff.slice(0, n).forEach((e) => doCheck(e, date, "site", by, "08"));
       if (n === staff.length) {
         const list = checks.filter((c) => c.site_id === siteId[s[0]] && c.date === date && c.type === "site");
-        subs.push({ site_id: siteId[s[0]], date: date, by: by, time: (16 + Math.floor(rnd() * 2)) + ":" + ("0" + Math.floor(rnd() * 60)).slice(-2), total: staff.length, passed: list.filter((c) => c.status === "pass").length, gaps: list.filter((c) => c.status === "gaps").length, supply: list.filter((c) => c.status === "supply").length, absent: list.filter((c) => c.status === "absent" || c.status === "leave").length });
+        subs.push({ site_id: siteId[s[0]], date: date, by: by, time: (rnd() < (s[2] > 0.94 ? 0.04 : 0.2) ? 18 : 16 + Math.floor(rnd() * 2)) + ":" + ("0" + Math.floor(rnd() * 60)).slice(-2), total: staff.length, passed: list.filter((c) => c.status === "pass").length, gaps: list.filter((c) => c.status === "gaps").length, supply: list.filter((c) => c.status === "supply").length, absent: list.filter((c) => c.status === "absent" || c.status === "leave").length });
       }
       if (rnd() < (s[2] > 0.94 ? 0.5 : 0.25)) {
         const techs = staff.filter((e) => e.trade !== "Cleaner");
@@ -652,6 +935,12 @@ function loadDemoData() {
       }
     });
   }
+  emps.forEach((e) => {
+    if (!e.baseline_on) return;
+    const held = ["uniform", "id_card", "shoes", "gloves_fabric", "gloves_rubber", "mask", "goggles", "ear_plugs", "helmet", "shoe_covers"].filter(() => rnd() < 0.9);
+    e.ppe_held = held.join(",");
+    e.missing = held.length < 10 && rnd() < 0.3 ? "Second uniform set" : "";
+  });
   insertMany_("Employees", emps.map((e) => { const o = Object.assign({}, e); delete o._site; delete o._care; return o; }));
   insertMany_("Checks", checks);
   insertMany_("Supply", supply);
@@ -679,5 +968,30 @@ function loadDemoData() {
   });
   insertMany_("Audits", audits);
   insertMany_("Actions", actions);
+  // Incidents reported from the field.
+  const INC = [["difficult_customer", "Villa 21", "Customer upset about the visit time and raised his voice.", "Stayed calm, called the supervisor, who rebooked the visit."],
+    ["complaint", "Tower B, flat 1204", "Resident complained the technician's uniform was dirty.", "Technician sent to change; apologised to the resident."],
+    ["serious_conduct", "Villa 7", "Technician used the customer's bathroom without permission and argued when asked.", "Removed from site; FM Manager informed."],
+    ["damage", "Villa 33", "Paint drip on the customer's floor tiles.", "Cleaned immediately; customer satisfied."],
+    ["difficult_customer", "Building 4 lobby", "Customer refused entry without the ID card shown.", "ID shown; work done."],
+    ["complaint", "Villa 112", "Customer said the cleaner was using a phone in the house.", "Verbal warning recorded."]];
+  const incidents = INC.map((x, i) => {
+    const site = SITES[i % SITES.length][0];
+    const staff = emps.filter((e) => e._site === site);
+    const d = addDays_(today, -[1, 3, 4, 9, 12, 20][i]);
+    const closed = i >= 3 ? addDays_(d, 1) : "";
+    return { id: id_(), date: d, time: "1" + (i % 8) + ":2" + i, site_id: siteId[site], employee_id: i === 4 ? "" : pick(staff).id, type: x[0], location: x[1], details: x[2], action: x[3], reported_by: userName[checker[site]], status: "open", ack_by: i >= 1 && i !== 2 ? userName.faisal : "", ack_on: i >= 1 && i !== 2 ? addDays_(d, i >= 3 ? 1 : 0) : "", closed_on: closed, outcome: closed ? "Discussed with the team at the morning briefing." : "" };
+  });
+  insertMany_("Incidents", incidents);
+  // HR register: some repeat findings already handled, some still pending.
+  const disc = [];
+  Object.keys(findDates).forEach((empId, i) => {
+    const dates = findDates[empId].filter((d) => d >= addDays_(today, -90)).sort();
+    if (dates.length < 2 || i % 3 === 0) return;
+    const e = emps.filter((x) => x.id === empId)[0];
+    disc.push({ id: id_(), employee_id: empId, site_id: e.site_id, date: addDays_(dates[1], 1), level: "written", action: "Written warning issued", amount: "", notes: "", by: userName.hr });
+    if (i % 2) disc.push({ id: id_(), employee_id: empId, site_id: e.site_id, date: addDays_(dates[1], 3), level: "refresher", action: "Grooming refresher session attended", amount: "", notes: "", by: userName.hr });
+  });
+  insertMany_("Discipline", disc);
   return "Demo data loaded: " + emps.length + " staff, " + checks.length + " checks, " + audits.length + " audits. Demo PINs are 1234.";
 }

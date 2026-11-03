@@ -38,30 +38,40 @@
   async function route() {
     const [path, qs] = (location.hash.replace(/^#\/?/, "") || "").split("?");
     R = { parts: path.split("/").filter(Boolean), q: Object.fromEntries(new URLSearchParams(qs || "")) };
-    if (R.parts[0] === "report" && /^\d{4}-\d{2}$/.test(R.q.month || "")) await ensureFrom(R.q.month + "-01");
+    if (R.parts[0] === "report") { location.replace("#/reports" + (R.q.month ? `?month=${R.q.month}` : "")); return route(); }
+    if (R.parts[0] === "reports" && /^\d{4}-\d{2}$/.test(R.q.month || "")) await ensureFrom(R.q.month + "-01");
+    if (R.parts[0] === "reports" && /^\d{4}-\d{2}-\d{2}$/.test(R.q.from || "")) await ensureFrom(R.q.from);
+    if (R.parts[0] === "analytics" && Number(R.q.weeks) > 13) await ensureFrom(addDays(G.mondayOf(D.today), -7 * (Number(R.q.weeks) - 1)));
+    if (R.parts[0] === "activity" && !ACT) await loadActivity();
     if (R.parts[0] === "checklists" && /^\d{4}-\d{2}-\d{2}$/.test(R.q.date || "")) await ensureFrom(R.q.date);
   }
 
   const PAGES = {
-    "": overviewPage, checklists: checklistsPage, audits: auditsPage, findings: findingsPage, employees: employeesPage,
-    supply: supplyPage, training: trainingPage, report: reportPage, settings: settingsPage,
+    "": overviewPage, analytics: analyticsPage, sites: sitePage, checklists: checklistsPage, audits: auditsPage, findings: findingsPage,
+    incidents: incidentsPage, hr: hrPage, employees: employeesPage, supply: supplyPage, training: trainingPage, reports: reportsPage,
+    activity: activityPage, settings: settingsPage,
   };
-  const NAV = [["", "Overview"], ["checklists", "Daily checklists"], ["audits", "Audits"], ["findings", "Findings & actions"], ["employees", "Employees"], ["supply", "Supply gaps"], ["training", "Training"], ["report", "Monthly report"], ["settings", "Sites & users"]];
+  const nav = () => [["", "Overview"], ["analytics", "Analytics"], ["checklists", "Daily checklists"], ["audits", "Audits"], ["findings", "Findings & actions"],
+    ["incidents", "Incidents"], ["hr", "HR register"], ["employees", "Employees"], ["supply", "Supply gaps"], ["training", "Training & baseline"],
+    ["reports", "Reports & exports"], ...(D.user.can.activity ? [["activity", "Activity log"]] : []), ["settings", D.user.can.settings ? "Sites, users & rules" : "Settings"]];
 
   function render() {
     const page = R.parts[0] || "";
-    const counts = { findings: G.openActions(D).length, supply: D.supply.filter((g) => !g.issued_on).length };
+    const counts = {
+      findings: G.openActions(D).length, supply: D.supply.filter((g) => !g.issued_on).length,
+      incidents: D.incidents.filter((x) => x.status === "open").length, hr: G.hrPending(D).length,
+    };
     let body;
     try { body = (PAGES[page] || overviewPage)(); } catch (e) { console.error(e); body = `<div class="flash err">Could not show this page: ${esc(e.message)}</div>`; }
     root.innerHTML = `
       <div class="shell">
         <aside class="side">
           <div class="brand"><img src="assets/logo.png" alt="ABFM" class="brand-logo"><div class="eyebrow">Al Bonian FM</div><b>Grooming Control</b></div>
-          <nav class="nav">${NAV.map(([p, l]) => `<a href="#/${p}" class="${page === p ? "on" : ""}"><span class="d"></span>${l}${counts[p] ? `<span class="cnt">${counts[p]}</span>` : ""}</a>`).join("")}</nav>
+          <nav class="nav">${nav().map(([p, l]) => `<a href="#/${p}" class="${page === p ? "on" : ""}"><span class="d"></span>${l}${counts[p] ? `<span class="cnt">${counts[p]}</span>` : ""}</a>`).join("")}</nav>
           <div class="user"><div class="avatar">${initials(D.user.name)}</div><div><b>${esc(D.user.name)}</b>${esc(S.roleLabel(D.user.role))}
             <div>${D.user.field ? `<a href="index.html">Checklist app</a> · ` : ""}<a href="#" data-logout>Log out</a></div></div></div>
         </aside>
-        <main class="main">${body}</main>
+        <main class="main">${D.outdatedBackend ? `<div class="notice no-print"><b>Update needed:</b> paste the latest <code>setup/grooming-backend.gs</code> into your Google Apps Script and deploy a new version to turn on incidents, the HR register, rules and the activity log (README, “Updating”).</div>` : ""}${body}</main>
       </div>`;
     window.scrollTo(0, 0);
   }
@@ -83,22 +93,24 @@
     const { rows, kpi, alerts } = G.overview(D);
     const delta = kpi.compliance != null && kpi.prev != null ? kpi.compliance - kpi.prev : null;
     return `
-      ${head(fmtDay(D.today), D.user.role === "fm_manager" ? "Overview, my sites" : "Overview, all sites", "", `<a class="btn small ghost" href="#" data-refresh>↻ Refresh</a><a class="btn small navy" href="#/report">Monthly report</a>`)}
-      <div class="kpis">
-        <div class="card kpi"><div class="l">Checklists received today</div><div class="v">${kpi.sentToday}<small> / ${kpi.sites}</small></div><div class="s ${kpi.sentToday < kpi.sites ? "red" : "green"}">${kpi.sites - kpi.sentToday ? `${kpi.sites - kpi.sentToday} site(s) not sent yet` : "All sites sent"}</div></div>
-        <div class="card kpi"><div class="l">Staff passing daily check (14 days)</div><div class="v">${pct(kpi.compliance, 1)}</div><div class="s ${delta == null ? "muted" : delta >= 0 ? "green" : "red"}">${delta == null ? "Supply gaps count as pass" : `${delta >= 0 ? "▲" : "▼"} ${Math.abs(delta).toFixed(1)} pts vs previous 14 days`}</div></div>
+      ${head(fmtDay(D.today), D.user.role === "fm_manager" ? "Overview, my sites" : "Overview, all sites", "", `<a class="btn small ghost" href="#" data-refresh>↻ Refresh</a><a class="btn small ghost" href="#/analytics">Analytics</a><a class="btn small navy" href="#/reports">Reports</a>`)}
+      <div class="kpis six">
+        <div class="card kpi"><div class="l">Checklists received today</div><div class="v">${kpi.sentToday}<small> / ${kpi.sites}</small></div><div class="s ${kpi.sentToday < kpi.sites ? "red" : "green"}">${kpi.sites - kpi.sentToday ? `${kpi.sites - kpi.sentToday} site(s) not sent yet` : "All sites sent"}${kpi.lateToday ? ` · ${kpi.lateToday} late` : ""}</div></div>
+        <div class="card kpi"><div class="l">Staff passing daily check (14 days)</div><div class="v">${pct(kpi.compliance, 1)}</div><div class="s ${delta == null || Math.abs(delta) < 0.05 ? "muted" : delta > 0 ? "green" : "red"}">${delta == null ? "Supply gaps count as pass" : Math.abs(delta) < 0.05 ? "No change vs previous 14 days" : `${delta > 0 ? "▲" : "▼"} ${Math.abs(delta).toFixed(1)} pts vs previous 14 days`}</div></div>
         <div class="card kpi"><div class="l">Open audit findings</div><div class="v">${kpi.open}</div><div class="s ${kpi.overdue ? "red" : "muted"}">${kpi.overdue ? `${kpi.overdue} past the ${T.findingCloseDays}-day limit` : `Close within ${T.findingCloseDays} days`}</div></div>
         <div class="card kpi"><div class="l">Average latest audit score</div><div class="v">${kpi.avgAudit == null ? "–" : Math.round(kpi.avgAudit)}<small> / 100</small></div><div class="s muted">Pass mark ${T.auditPass} · ${plural(kpi.below, "site")} below</div></div>
         <div class="card kpi"><div class="l">Staff trained</div><div class="v">${pct(kpi.trained)}</div><div class="s muted">Target 100% by ${fmtDate(T.trainingDeadline)}</div><div class="bar"><i style="width:${kpi.trained || 0}%"></i></div></div>
+        <a href="#/incidents" class="card kpi"><div class="l">Open incidents</div><div class="v">${kpi.incidentsOpen}</div><div class="s muted">Reported from the field</div></a>
+        <a href="#/hr" class="card kpi"><div class="l">HR steps not recorded</div><div class="v">${kpi.hrPending}</div><div class="s ${kpi.hrPending ? "red" : "muted"}">${kpi.hrPending ? "Written warnings, refreshers, HR action" : "All up to date"}</div></a>
       </div>
       <div class="grid2">
         <div class="card pad panel"><h3><span>Sites</span>${legend}</h3>
           ${rows.length === 0 ? empty(`No sites yet. Add them under <a class="blue" href="#/settings">Sites & users</a>.`) : `<div class="table-wrap"><table class="t">
             <thead><tr><th>Site</th><th>FM Manager</th><th>Today</th><th>Daily compliance, last 14 days</th><th>Last audit</th><th>Open</th></tr></thead><tbody>
             ${rows.map((r) => `<tr>
-              <td><a href="#/checklists/${r.site.id}/${D.today}"><b>${esc(r.site.name)}</b></a><br><span class="muted small">${r.staff} staff</span></td>
+              <td><a href="#/sites/${r.site.id}"><b>${esc(r.site.name)}</b></a><br><span class="muted small">${r.staff} staff</span></td>
               <td>${esc(r.manager) || `<span class="muted">–</span>`}</td>
-              <td>${r.todayAt ? `<span class="pill green">✓ ${esc(r.todayAt)}</span>` : `<span class="pill red">Not sent</span>`}</td>
+              <td><a href="#/checklists/${r.site.id}/${D.today}">${r.todayAt ? (r.todayAt > T.checklistDue ? `<span class="pill amber">✓ ${esc(r.todayAt)} late</span>` : `<span class="pill green">✓ ${esc(r.todayAt)}</span>`) : `<span class="pill ${G.nowHM() > T.checklistDue ? "red" : "grey"}">Not sent</span>`}</a></td>
               <td><div class="strip">${r.strip.map((d) => `<i class="${stripClass(d)}" title="${fmtDate(d.date)}: ${d.sent ? (d.pct == null ? "sent" : d.pct + "%") : "not sent"}"></i>`).join("")}</div></td>
               <td>${r.lastAudit ? `<a href="#/audits/${r.lastAudit.id}">${auditScore(r.lastAudit.total)}</a>` : `<span class="muted">None yet</span>`}</td>
               <td>${r.open}${r.overdue ? `<span class="red small"> (${r.overdue} late)</span>` : ""}</td></tr>`).join("")}
@@ -111,7 +123,26 @@
           }).join("")}
           ${alerts.length > 12 ? `<div class="muted small mt-s">+ ${alerts.length - 12} more</div>` : ""}
         </div>
-      </div>`;
+      </div>
+      ${trendAndMissed(D.user.siteIds, 12, addDays(D.today, -29), D.today, "Most-missed standards, last 30 days")}`;
+  }
+
+  /** Two charts used on several pages: weekly pass rate and most-missed standards. */
+  function trendAndMissed(siteIds, weeks, from, to, missedTitle) {
+    let w = G.weekly(D, siteIds, weeks);
+    const firstData = w.findIndex((x) => x.tot > 0);
+    if (firstData > 0) w = w.slice(Math.min(firstData, w.length - 2));   // skip weeks before the first check
+    const pts = w.map((x) => ({ label: fmtDate(x.week), value: x.pct, tip: `Week of ${fmtDate(x.week)}: ${x.pct == null ? "no checks" : `${x.pct.toFixed(1)}% passed (${x.tot - x.ok} of ${x.tot} with gaps)`}` }));
+    const m = G.missedStandards(D, siteIds, from, to);
+    const rows = m.rows.slice(0, 8).map((r) => ({ label: r.label, value: r.n, display: String(r.n), tip: `${r.label}: failed ${r.n} times in ${m.checks} checks (${((100 * r.n) / Math.max(1, m.checks)).toFixed(1)}%)` }));
+    return `<div class="grid-half mt">
+      <div class="card pad panel"><h3><span>Site-check pass rate by week</span><span class="muted small">last ${weeks} weeks · supply gaps count as pass</span></h3>
+        ${G.lineChart(pts, { title: "Weekly pass rate" })}
+        ${G.tableView(["Week of", "Checks", "With gaps", "Pass rate"], w.map((x) => [fmtDate(x.week, true), x.tot, x.tot - x.ok, x.pct == null ? "–" : x.pct.toFixed(1) + "%"]))}</div>
+      <div class="card pad panel"><h3><span>${esc(missedTitle)}</span><span class="muted small">times failed · supply gaps excluded</span></h3>
+        ${G.barList(rows)}
+        ${m.rows.length ? G.tableView(["Standard", "Times failed", "Share of checks"], m.rows.map((r) => [r.label, r.n, ((100 * r.n) / Math.max(1, m.checks)).toFixed(1) + "%"])) : ""}</div>
+    </div>`;
   }
 
   // ---------------- daily checklists ----------------
@@ -119,7 +150,7 @@
     if (R.parts[1]) return siteDayPage(R.parts[1], R.parts[2] || D.today);
     const date = /^\d{4}-\d{2}-\d{2}$/.test(R.q.date || "") ? R.q.date : D.today;
     return `
-      ${head("Daily control", "Daily checklists", fmtDay(date), `
+      ${head("Daily control", "Daily checklists", `${fmtDay(date)} · due by ${esc(T.checklistDue)}`, `
         <a class="btn small ghost" href="#/checklists?date=${addDays(date, -1)}">‹ Previous day</a>
         <input type="date" value="${date}" max="${D.today}" data-goto="#/checklists?date=">
         ${date < D.today ? `<a class="btn small ghost" href="#/checklists?date=${addDays(date, 1)}">Next day ›</a>` : ""}`)}
@@ -129,7 +160,7 @@
           const sub = D.submissions.find((x) => x.site_id === s.id && x.date === date);
           const n = (t) => D.checks.filter((c) => c.site_id === s.id && c.date === date && c.type === t).length;
           return `<tr class="click"><td><a href="#/checklists/${s.id}/${date}"><b>${esc(s.name)}</b></a></td>
-            <td>${sub ? `<span class="pill green">✓ ${esc(sub.time)} · ${esc(sub.by)}</span>` : `<span class="pill red">Not sent</span>`}</td>
+            <td>${sub ? `<span class="pill ${sub.time > T.checklistDue ? "amber" : "green"}">✓ ${esc(sub.time)}${sub.time > T.checklistDue ? " late" : ""} · ${esc(sub.by)}</span>` : `<span class="pill red">Not sent</span>`}</td>
             <td>${staffOf(s.id).length}</td><td>${n("site")}</td><td class="green">${sub ? sub.passed : "–"}</td><td class="red">${sub ? sub.gaps : "–"}</td>
             <td class="blue">${sub ? sub.supply : "–"}</td><td>${sub ? sub.absent : "–"}</td><td>${n("camp")}</td><td>${n("field")}</td></tr>`;
         }).join("")}</tbody></table></div></div>`;
@@ -393,6 +424,9 @@
     D.supply.filter((g) => g.employee_id === id).forEach((g) => events.push({ d: g.requested_on, cls: "blue", t: `Supply gap: ${g.item}`, x: g.issued_on ? `Requested ${fmtDate(g.requested_on)} · issued ${fmtDate(g.issued_on)}` : "Still waiting from Stores" }));
     D.actions.filter((x) => x.employee_id === id).forEach((x) => { const a = D.auditById[x.audit_id]; if (a) events.push({ d: a.date, cls: "red", t: "Audit finding", x: `${x.finding}${x.action ? `. ${x.action}` : ""}${x.closed_on ? ` · closed ${fmtDate(x.closed_on)}` : " · open"}`, href: `#/audits/${a.id}` }); });
     if (e.trained_on) events.push({ d: e.trained_on, cls: "amber", t: "Toolbox talk training", x: "Grooming, Etiquette & Work Standards" });
+    if (e.baseline_on) events.push({ d: e.baseline_on, cls: "", t: "Baseline check", x: `Holds: ${e.ppe_held.map(S.baselineLabel).join(", ") || "nothing recorded"}${e.missing ? ` · missing: ${e.missing}` : ""}` });
+    D.discipline.filter((x) => x.employee_id === id).forEach((x) => events.push({ d: x.date, cls: "amber", t: `HR: ${S.levelLabel(x.level)}`, x: `${x.action || ""}${x.amount != null ? ` · AED ${x.amount}` : ""}${x.notes ? ` · ${x.notes}` : ""} · ${x.by}` }));
+    D.incidents.filter((x) => x.employee_id === id).forEach((x) => events.push({ d: x.date, cls: "red", t: `Incident: ${S.incidentLabel(x.type)}`, x: `${x.details} (${x.status})`, href: "#/incidents?status=all" }));
     events.sort((a, b) => b.d.localeCompare(a.d));
     const days = Array.from({ length: 30 }, (_, i) => addDays(D.today, i - 29));
     const cal = days.map((d) => {
@@ -411,14 +445,15 @@
       <div class="head"><div class="row" style="gap:16px"><div class="avatar" style="width:60px;height:60px;font-size:20px">${initials(e.name)}</div>
         <div><div class="eyebrow"><a href="#/employees">Employees</a> › ${esc(e.staff_no)}</div><h1>${esc(e.name)}${e.active ? "" : ` <span class="pill grey">Inactive</span>`}</h1>
           <div class="muted small" style="margin-top:2px">${[e.trade, e.site_id && siteName(e.site_id), fm && `FM Manager ${fm.name}`, e.uniform_size && `Uniform ${e.uniform_size}`, e.shoe_size && `Shoes ${e.shoe_size}`, e.trained_on ? `Training ✓ ${fmtDate(e.trained_on)}` : "Not trained yet"].filter(Boolean).map(esc).join(" · ")}</div></div></div></div>
-      <div class="card pad panel mb"><h3><span>Warning level</span><span class="muted small">${plural(n, "finding")} in the last 90 days · supply gaps are never counted</span></h3>
+      <div class="card pad panel mb"><h3><span>Warning level</span><span class="muted small">${plural(n, "finding")} in the last ${T.warningWindowDays} days · supply gaps are never counted</span></h3>
         <div class="ladder">
           <div class="rung ${rung(1)}"><div class="e">1st finding${n >= 1 ? " ✓" : ""}</div><b>Verbal warning</b>${n >= 1 ? fmtDate(finds[n - 1]) : "Correct on the spot · FM Manager or supervisor"}</div>
           <div class="rung ${rung(2)}"><div class="e">${n === 1 ? "Next finding" : `Repeat${n >= 2 ? " ✓" : ""}`}</div><b>Written warning + refresher</b>${n >= 2 ? fmtDate(finds[n - 2]) : "FM Manager with HR"}</div>
           <div class="rung ${n >= 3 ? "past" : n === 2 ? "next" : ""}"><div class="e">${n === 2 ? "Next finding" : `Further repeat${n >= 3 ? " ✓" : ""}`}</div><b>HR disciplinary action</b>Salary deduction possible (amount set by HR)</div>
           <div class="rung"><div class="e">Serious conduct</div><b>Removal from site</b>HR investigation · OCO informed</div>
         </div>
-        ${n >= 3 ? `<div class="flash err mt" style="margin-bottom:0">${n} findings in 90 days: refer to HR for disciplinary action.</div>` : ""}
+        ${n >= 3 ? `<div class="flash err mt" style="margin-bottom:0">${n} findings in ${T.warningWindowDays} days: refer to HR for disciplinary action.</div>` : ""}
+        ${(() => { const p = G.hrPending(D).find((h) => h.emp.id === id); return p ? `<div class="flash warn mt" style="margin-bottom:0"><b>Not recorded yet:</b> ${p.needs.map((x) => esc(S.levelLabel(x.level))).join(", ")}. ${D.user.can.discipline ? `<a class="blue" href="#/hr">Record in the HR register</a>` : ""}</div>` : ""; })()}
       </div>
       <div class="grid-half">
         <div class="card pad panel"><h3>History</h3>${events.length ? `<div class="tl">${events.slice(0, 40).map((v) => `<div class="ev ${v.cls}"><b>${fmtDate(v.d)} · ${v.href ? `<a class="blue" href="${v.href}">${esc(v.t)}</a>` : esc(v.t)}</b>${v.x ? `<small>${esc(v.x)}</small>` : ""}</div>`).join("")}</div>` : `<p class="muted">Nothing recorded yet.</p>`}</div>
@@ -429,6 +464,10 @@
             <h3 class="mt">Gaps by standard (90 days)</h3>
             ${by.length ? `<table class="t"><tbody>${by.map((x) => `<tr><td>${esc(x.i.label)}<span class="muted small"> · ${S.AREAS.find((a) => a.code === x.i.area).label}</span></td><td><b>${x.n}</b></td></tr>`).join("")}</tbody></table>` : `<p class="muted small">No gaps.</p>`}
           </div>
+          <div class="card pad panel mb"><h3><span>Baseline</span><span class="muted small">${e.baseline_on ? `checked ${fmtDate(e.baseline_on, true)}` : "not done yet"}</span></h3>
+            ${e.baseline_on ? `<div class="chips">${S.BASELINE_ITEMS.map((i) => `<span class="pill ${e.ppe_held.includes(i.code) ? "green" : "red"}">${e.ppe_held.includes(i.code) ? "✓" : "✕"} ${esc(i.label)}</span>`).join("")}</div>${e.missing ? `<p class="small mt-s">Other missing: ${esc(e.missing)}</p>` : ""}` : `<p class="muted small">The FM Manager or supervisor records sizes and PPE held in the checklist app (Training & baseline).</p>`}
+          </div>
+          ${D.user.can.discipline ? `<details class="card pad panel mb"><summary class="linkbtn" style="cursor:pointer">+ Record an HR step</summary>${hrForm(e.id, "written", "").replace('class="card pad panel mb"', 'class="mt"')}</details>` : ""}
           ${D.user.can.manageStaff ? `<details class="card pad panel"><summary class="linkbtn" style="cursor:pointer">Edit employee details</summary>${employeeForm(e)}</details>` : ""}
         </div>
       </div>`;
@@ -453,24 +492,28 @@
       </tbody></table></div>`}</div>`;
   }
 
-  // ---------------- training ----------------
+  // ---------------- training & baseline ----------------
   function trainingPage() {
     const site = R.q.site || "";
+    const show = R.q.show === "baseline" ? "baseline" : "training";
     const staff = D.employees.filter((e) => e.active && D.user.siteIds.includes(e.site_id));
-    const untrained = staff.filter((e) => !e.trained_on && (!site || e.site_id === site)).sort((a, b) => siteName(a.site_id).localeCompare(siteName(b.site_id)) || a.name.localeCompare(b.name));
+    const todo = staff.filter((e) => (show === "baseline" ? !e.baseline_on : !e.trained_on) && (!site || e.site_id === site)).sort((a, b) => siteName(a.site_id).localeCompare(siteName(b.site_id)) || a.name.localeCompare(b.name));
     const t = staff.filter((e) => e.trained_on).length;
+    const bl = staff.filter((e) => e.baseline_on).length;
+    const bar = (p) => `<div class="bar" style="margin-top:0"><i style="width:${p}%;${p === 100 ? "background:var(--green)" : ""}"></i></div>`;
+    const missingPpe = staff.filter((e) => e.baseline_on && S.BASELINE_ITEMS.some((i) => !e.ppe_held.includes(i.code))).length;
     return `
-      ${head(`Target: 100% by ${fmtDate(T.trainingDeadline, true)}`, "Training", `Staff toolbox talk: Grooming, Etiquette & Work Standards · ${t} of ${staff.length} trained (${staff.length ? Math.round((100 * t) / staff.length) : 0}%)`)}
+      ${head(`Training target: 100% by ${fmtDate(T.trainingDeadline, true)}`, "Training & baseline", `Toolbox talk: ${t} of ${staff.length} trained (${staff.length ? Math.round((100 * t) / staff.length) : 0}%) · Baseline check: ${bl} of ${staff.length} (${staff.length ? Math.round((100 * bl) / staff.length) : 0}%) · ${plural(missingPpe, "person", "people")} missing PPE at baseline`)}
       <div class="grid-half">
-        <div class="card pad panel"><h3>By site</h3><table class="t"><thead><tr><th>Site</th><th>Trained</th><th style="width:40%"></th></tr></thead><tbody>
-          ${D.mySites.map((s) => { const st = staffOf(s.id); const n = st.filter((e) => e.trained_on).length; const p = st.length ? Math.round((100 * n) / st.length) : 0;
-            return `<tr><td><a href="#/training?site=${s.id}" class="${site === s.id ? "" : "blue"}"><b>${esc(s.name)}</b></a></td><td class="nw">${n} / ${st.length} <span class="muted">(${p}%)</span></td>
-              <td><div class="bar" style="margin-top:0"><i style="width:${p}%;${p === 100 ? "background:var(--green)" : ""}"></i></div></td></tr>`; }).join("")}
-        </tbody></table></div>
-        <div class="card pad panel"><h3><span>Not trained yet${site ? ` · ${esc(siteName(site))}` : ""}</span>${site ? `<a href="#/training" class="linkbtn">All sites</a>` : ""}</h3>
-          ${untrained.length === 0 ? `<p class="muted">Everyone is trained. 👍</p>` : `<table class="t"><tbody>${untrained.map((e) => `<tr>
+        <div class="card pad panel"><h3>By site</h3><table class="t"><thead><tr><th>Site</th><th>Trained</th><th style="width:22%"></th><th>Baseline</th><th style="width:22%"></th></tr></thead><tbody>
+          ${D.mySites.map((s) => { const st = staffOf(s.id); const n = st.filter((e) => e.trained_on).length; const b = st.filter((e) => e.baseline_on).length; const p = st.length ? Math.round((100 * n) / st.length) : 0; const q = st.length ? Math.round((100 * b) / st.length) : 0;
+            return `<tr><td><a href="#/training?site=${s.id}&show=${show}" class="${site === s.id ? "" : "blue"}"><b>${esc(s.name)}</b></a></td><td class="nw">${n} / ${st.length}</td><td>${bar(p)}</td><td class="nw">${b} / ${st.length}</td><td>${bar(q)}</td></tr>`; }).join("")}
+        </tbody></table>
+        <p class="small muted mt">Baseline checks are recorded on the phone (Training tab): sizes, PPE held and missing items. Unticked items go to Stores.</p></div>
+        <div class="card pad panel"><h3><span class="chips"><a class="chip ${show === "training" ? "on" : ""}" href="#/training?show=training${site ? `&site=${site}` : ""}">Not trained</a><a class="chip ${show === "baseline" ? "on" : ""}" href="#/training?show=baseline${site ? `&site=${site}` : ""}">No baseline</a></span>${site ? `<a href="#/training?show=${show}" class="linkbtn">All sites</a>` : ""}</h3>
+          ${todo.length === 0 ? `<p class="muted">Everyone is done. 👍</p>` : `<table class="t"><tbody>${todo.map((e) => `<tr>
             <td><a class="blue" href="#/employees/${e.id}">${esc(e.name)}</a><br><span class="muted small">${esc(e.staff_no)} · ${esc(e.trade)} · ${esc(siteName(e.site_id))}</span></td>
-            <td style="text-align:right">${D.user.can.markTraining ? `<button class="btn small ghost" data-train="${e.id}">Mark trained</button>` : ""}</td></tr>`).join("")}</tbody></table>`}
+            <td style="text-align:right">${show === "training" && D.user.can.markTraining ? `<button class="btn small ghost" data-train="${e.id}">Mark trained</button>` : ""}</td></tr>`).join("")}</tbody></table>`}
         </div>
       </div>`;
   }
@@ -483,54 +526,338 @@
     return out;
   }
   const monthName = (ym) => new Date(ym + "-15T12:00:00Z").toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
-  function reportPage() {
+  // ---------------- reports & exports ----------------
+  const REPORT_TABS = [["monthly", "Monthly report (COO)"], ["period", "Period report"], ["exports", "Data exports"]];
+  function reportsPage() {
+    const tab = REPORT_TABS.some(([k]) => k === R.q.tab) ? R.q.tab : "monthly";
+    const tabs = `<div class="tabs no-print">${REPORT_TABS.map(([k, l]) => `<a href="#/reports?tab=${k}" class="${k === tab ? "on" : ""}">${l}</a>`).join("")}</div>`;
+    if (tab === "period") return periodPage(tabs);
+    if (tab === "exports") return exportsPage(tabs);
     const ms = months();
     const month = ms.includes(R.q.month) ? R.q.month : ms[0];
     const rows = G.monthlyReport(D, month);
-    const sum = (k) => rows.reduce((a, r) => a + (Number(r[k]) || 0), 0);
     return `
       ${head("Monthly report to the COO", monthName(month), `Compliance by site, repeat findings, open actions and supply gaps${month === ms[0] ? ` · month to date (${rows[0] ? rows[0].days : 0} days)` : ""}`,
-        `<select data-goto="#/report?month=">${ms.map((m) => `<option value="${m}" ${m === month ? "selected" : ""}>${monthName(m)}</option>`).join("")}</select>
-         <button class="btn small ghost" data-csv="${month}">Download CSV (Excel)</button><button class="btn small ghost" data-print>Print / PDF</button>`)}
-      <div class="kpis">
-        <div class="card kpi"><div class="l">Daily checklists sent</div><div class="v">${sum("sent")}<small> / ${sum("days")}</small></div><div class="s muted">site-days</div></div>
+        `<select data-goto="#/reports?tab=monthly&month=">${ms.map((m) => `<option value="${m}" ${m === month ? "selected" : ""}>${monthName(m)}</option>`).join("")}</select>
+         <button class="btn small ghost" data-csv-report="${month}-01|${addDays(addDays(month + "-01", 32).slice(0, 8) + "01", -1)}|abfm-grooming-${month}">Download CSV</button><button class="btn small ghost" data-print>Print / PDF</button>`)}
+      ${tabs}${reportBody(rows, `${month}-01`, addDays(addDays(month + "-01", 32).slice(0, 8) + "01", -1), D.user.siteIds)}`;
+  }
+
+  function periodPage(tabs) {
+    const presets = {
+      week: [G.mondayOf(D.today), D.today, "This week"], lastweek: [addDays(G.mondayOf(D.today), -7), addDays(G.mondayOf(D.today), -1), "Last week"],
+      d30: [addDays(D.today, -29), D.today, "Last 30 days"], d90: [addDays(D.today, -89), D.today, "Last 90 days"],
+    };
+    let from = /^\d{4}-\d{2}-\d{2}$/.test(R.q.from || "") ? R.q.from : presets.d30[0];
+    let to = /^\d{4}-\d{2}-\d{2}$/.test(R.q.to || "") ? R.q.to : D.today;
+    if (to > D.today) to = D.today;
+    if (from > to) from = to;
+    const site = D.mySites.some((x) => x.id === R.q.site) ? R.q.site : "";
+    const ids = site ? [site] : D.user.siteIds;
+    const rows = G.periodReport(D, from, to, ids);
+    return `
+      <div class="report-head">${head(`Period report${site ? ` · ${esc(siteName(site))}` : " · all my sites"}`, `${fmtDate(from, true)} to ${fmtDate(to, true)}`, `Generated ${fmtDay(D.today)} ${G.nowHM()} by ${esc(D.user.name)}`,
+        `<button class="btn small ghost" data-csv-report="${from}|${to}|abfm-grooming-${from}-to-${to}" data-sites="${ids.join(",")}">Download CSV</button><button class="btn small ghost" data-print>Print / PDF</button>`)}</div>
+      ${tabs}
+      <form id="period-form" class="filters no-print mb">
+        ${Object.entries(presets).map(([k, [f, t, l]]) => `<a class="chip ${from === f && to === t ? "on" : ""}" href="#/reports?tab=period&from=${f}&to=${t}${site ? `&site=${site}` : ""}">${l}</a>`).join("")}
+        <input type="date" name="from" value="${from}" max="${D.today}"> to <input type="date" name="to" value="${to}" max="${D.today}">
+        <select name="site">${opts(D.mySites, site, "All my sites")}</select>
+        <button class="btn small navy" type="submit">Show</button>
+      </form>
+      ${reportBody(rows, from, to, ids)}`;
+  }
+
+  function reportBody(rows, from, to, ids) {
+    const sum = (k) => rows.reduce((a, r) => a + (Number(r[k]) || 0), 0);
+    const inRange = (d) => d >= from && d <= to;
+    const checks = sum("siteChecks");
+    const passWeighted = rows.reduce((a, r) => a + (r.passRate == null ? 0 : (r.passRate * r.siteChecks) / 100), 0);
+    const acts = G.openActions(D).filter((x) => ids.includes(D.auditById[x.audit_id].site_id));
+    const inc = D.incidents.filter((x) => ids.includes(x.site_id) && inRange(x.date)).sort((a, b) => b.date.localeCompare(a.date));
+    const hr = G.hrPending(D).filter((h) => ids.includes(h.emp.site_id));
+    const m = G.missedStandards(D, ids, from, to);
+    return `
+      <div class="kpis six">
+        <div class="card kpi"><div class="l">Site-check pass rate</div><div class="v">${checks ? pct((100 * passWeighted) / checks, 1) : "–"}</div><div class="s muted">${checks} checks</div></div>
+        <div class="card kpi"><div class="l">Daily checklists sent</div><div class="v">${sum("sent")}<small> / ${sum("days")}</small></div><div class="s ${sum("sent") - sum("onTime") ? "amber" : "muted"}">${sum("sent") - sum("onTime")} late (after ${esc(T.checklistDue)})</div></div>
         <div class="card kpi"><div class="l">Daily-check findings</div><div class="v">${sum("findings")}</div><div class="s muted">${sum("repeat")} repeat</div></div>
-        <div class="card kpi"><div class="l">Audit actions raised</div><div class="v">${sum("actionsRaised")}</div><div class="s muted">${sum("actionsOnTime")} closed on time · ${sum("actionsOpen")} open</div></div>
+        <div class="card kpi"><div class="l">Audit actions</div><div class="v">${sum("actionsRaised")}</div><div class="s muted">${sum("actionsOnTime")} closed on time · ${sum("actionsOpen")} open</div></div>
+        <div class="card kpi"><div class="l">Incidents</div><div class="v">${sum("incidents")}</div><div class="s ${sum("serious") ? "red" : "muted"}">${sum("serious")} serious conduct</div></div>
         <div class="card kpi"><div class="l">Supply gaps opened</div><div class="v">${sum("supplyOpened")}</div><div class="s muted">${sum("supplyWaiting")} still waiting</div></div>
       </div>
-      <div class="card pad"><div class="table-wrap"><table class="t">
-        <thead><tr><th>Site</th><th>Staff</th><th>Checklists sent</th><th>Pass rate</th><th>Findings (repeat)</th><th>Field checks</th><th>Audits</th><th>Actions on time / raised</th><th>Open actions</th><th>Supply opened / waiting</th><th>Avg days to issue</th><th>Trained</th></tr></thead><tbody>
-        ${rows.map((r) => `<tr><td><b>${esc(r.site)}</b></td><td>${r.staff}</td><td class="${r.sent < r.days ? "red" : ""}">${r.sent} / ${r.days}</td><td>${pct(r.passRate, 1)}</td>
+      <div class="card pad mb"><h3 class="mb">By site</h3><div class="table-wrap"><table class="t">
+        <thead><tr><th>Site</th><th>Staff</th><th>Checklists sent (late)</th><th>Pass rate</th><th>Findings (repeat)</th><th>Field checks</th><th>Audits</th><th>Actions on time / raised</th><th>Open</th><th>Incidents</th><th>Supply opened / waiting</th><th>Avg days to issue</th><th>Trained</th><th>Baseline</th></tr></thead><tbody>
+        ${rows.map((r) => `<tr><td><a href="#/sites/${r.id}"><b>${esc(r.site)}</b></a></td><td>${r.staff}</td><td class="${r.sent < r.days ? "red" : ""}">${r.sent} / ${r.days}${r.sent - r.onTime ? ` <span class="amber">(${r.sent - r.onTime})</span>` : ""}</td><td>${pct(r.passRate, 1)}</td>
           <td>${r.findings}${r.repeat ? `<span class="red"> (${r.repeat})</span>` : ""}</td><td class="${r.field < r.fieldTarget ? "red" : ""}">${r.field} / ${r.fieldTarget}</td>
           <td class="small">${r.audits ? `<span class="${r.latestAudit != null && r.latestAudit < T.auditPass ? "red" : ""}">${esc(r.audits)}</span>` : `<span class="red">None</span>`}</td>
-          <td>${r.actionsOnTime} / ${r.actionsRaised}</td><td class="${r.actionsOpen ? "red" : ""}">${r.actionsOpen}</td><td>${r.supplyOpened} / ${r.supplyWaiting}</td>
-          <td>${r.supplyAvg == null ? "–" : r.supplyAvg.toFixed(1)}</td><td>${pct(r.trained)}</td></tr>`).join("")}
+          <td>${r.actionsOnTime} / ${r.actionsRaised}</td><td class="${r.actionsOpen ? "red" : ""}">${r.actionsOpen}</td><td>${r.incidents}${r.serious ? `<span class="red"> (${r.serious} serious)</span>` : ""}</td><td>${r.supplyOpened} / ${r.supplyWaiting}</td>
+          <td>${r.supplyAvg == null ? "–" : r.supplyAvg.toFixed(1)}</td><td>${pct(r.trained)}</td><td>${pct(r.baseline)}</td></tr>`).join("")}
       </tbody></table></div></div>
-      <p class="muted small mt">Targets: 100% trained by ${fmtDate(T.trainingDeadline, true)} · audit score ${T.auditPass}+ · findings closed within ${T.findingCloseDays} days · ${T.fieldChecksPerWeek} field checks per site per week · supply within ${T.supplyWorkingDays} working days.</p>`;
+      <div class="grid-half">
+        <div class="card pad panel"><h3>Most-missed standards</h3>${G.barList(m.rows.slice(0, 8).map((r) => ({ label: r.label, value: r.n, display: String(r.n), tip: `${r.label}: ${r.n} of ${m.checks} checks` })))}</div>
+        <div class="card pad panel"><h3>HR steps not recorded <span class="muted small">${hr.length}</span></h3>${hr.length ? `<table class="t"><tbody>${hr.slice(0, 12).map((h) => `<tr><td><a class="blue" href="#/employees/${h.emp.id}">${esc(h.emp.name)}</a><br><span class="muted small">${esc(siteName(h.emp.site_id))}</span></td><td class="small">${h.needs.map((n) => esc(S.levelLabel(n.level))).join(", ")}</td></tr>`).join("")}</tbody></table>` : empty("All recorded. 👍")}</div>
+      </div>
+      <div class="grid-half mt">
+        <div class="card pad panel"><h3>Open audit actions <span class="muted small">${acts.length}</span></h3>${acts.length ? `<table class="t"><tbody>${acts.slice(0, 12).map((x) => `<tr><td class="nw ${x.due_on < D.today ? "red" : ""}">${fmtDate(x.due_on)}</td><td>${esc(siteName(D.auditById[x.audit_id].site_id))}</td><td>${esc(x.finding)}</td><td class="small">${esc(x.owner)}</td></tr>`).join("")}</tbody></table>` : empty("None open.")}</div>
+        <div class="card pad panel"><h3>Incidents in this period <span class="muted small">${inc.length}</span></h3>${inc.length ? `<table class="t"><tbody>${inc.slice(0, 12).map((x) => `<tr><td class="nw">${fmtDate(x.date)}</td><td>${esc(siteName(x.site_id))}</td><td>${esc(S.incidentLabel(x.type))}</td><td>${incidentPill(x)}</td></tr>`).join("")}</tbody></table>` : empty("None.")}</div>
+      </div>
+      <p class="muted small mt">Targets: 100% trained by ${fmtDate(T.trainingDeadline, true)} · audit score ${T.auditPass}+ · findings closed within ${T.findingCloseDays} days · ${T.fieldChecksPerWeek} field checks per site per week · supply within ${T.supplyWorkingDays} working days · checklist sent by ${esc(T.checklistDue)}.</p>`;
   }
-  function downloadCsv(month) {
-    const rows = G.monthlyReport(D, month);
-    const headRow = ["Site", "Staff", "Days", "Checklists sent", "Site checks", "Pass rate %", "Findings", "Repeat findings", "Field checks", "Field target", "Audits", "Latest audit score", "Actions raised", "Actions closed on time", "Actions open", "Supply gaps opened", "Supply gaps waiting", "Avg working days to issue", "Trained %"];
-    const cell = (v) => { const s = v == null ? "" : typeof v === "number" ? (Number.isInteger(v) ? String(v) : v.toFixed(1)) : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-    const lines = [headRow, ...rows.map((r) => [r.site, r.staff, r.days, r.sent, r.siteChecks, r.passRate, r.findings, r.repeat, r.field, r.fieldTarget, r.audits, r.latestAudit, r.actionsRaised, r.actionsOnTime, r.actionsOpen, r.supplyOpened, r.supplyWaiting, r.supplyAvg, r.trained])];
-    const blob = new Blob(["﻿" + lines.map((l) => l.map(cell).join(",")).join("\r\n")], { type: "text/csv" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `abfm-grooming-${month}.csv`;
-    a.click();
+  function reportCsv(from, to, name, ids) {
+    const rows = G.periodReport(D, from, to, ids);
+    G.downloadCsv(`${name}.csv`,
+      ["Site", "Staff", "Days", "Checklists sent", "Sent on time", "Site checks", "Pass rate %", "Findings", "Repeat findings", "Field checks", "Field target", "Audits", "Latest audit score", "Actions raised", "Actions closed on time", "Actions open", "Incidents", "Serious conduct", "Supply gaps opened", "Supply gaps waiting", "Avg working days to issue", "Trained %", "Baseline %"],
+      rows.map((r) => [r.site, r.staff, r.days, r.sent, r.onTime, r.siteChecks, r.passRate, r.findings, r.repeat, r.field, r.fieldTarget, r.audits, r.latestAudit, r.actionsRaised, r.actionsOnTime, r.actionsOpen, r.incidents, r.serious, r.supplyOpened, r.supplyWaiting, r.supplyAvg, r.trained, r.baseline]));
+  }
+
+  const EXPORTS = [
+    ["checks", "Checks", "One row per check: date, type, employee, status, gaps, action, note, checked by"],
+    ["gaps", "Gaps (findings detail)", "One row per failed standard, including supply gaps"],
+    ["submissions", "Daily checklists sent", "Site, date, time, on time or late, totals"],
+    ["audits", "Audits", "Scores by area, total, pass/fail, follow-up dates"],
+    ["actions", "Audit actions", "Finding, staff, action, owner, due, closed"],
+    ["incidents", "Incidents", "Type, site, staff, details, status, outcome"],
+    ["hr", "HR register", "Warnings, refreshers, HR actions, deductions"],
+    ["supply", "Supply gaps", "Item, employee, requested, issued, working days"],
+    ["employees", "Employees", "Sizes, training, baseline, findings in window, next step"],
+  ];
+  function exportsPage(tabs) {
+    const from = /^\d{4}-\d{2}-\d{2}$/.test(R.q.from || "") ? R.q.from : addDays(D.today, -29);
+    const to = /^\d{4}-\d{2}-\d{2}$/.test(R.q.to || "") ? R.q.to : D.today;
+    return `
+      ${head("Download for Excel", "Data exports", `Dated data is limited to the period you choose. Files open in Excel (CSV, UTF-8).`)}
+      ${tabs}
+      <form id="export-form" class="filters mb"><label class="small muted">From <input type="date" name="from" value="${from}" max="${D.today}"></label>
+        <label class="small muted">To <input type="date" name="to" value="${to}" max="${D.today}"></label>
+        <select name="site">${opts(D.mySites, R.q.site || "", "All my sites")}</select></form>
+      <div class="card pad"><table class="t"><tbody>
+        ${EXPORTS.map(([k, l, d]) => `<tr><td><b>${l}</b><br><span class="muted small">${d}</span></td><td style="text-align:right"><button class="btn small ghost" data-export="${k}">⬇ Download</button></td></tr>`).join("")}
+      </tbody></table></div>`;
+  }
+  async function runExport(kind) {
+    const f = document.getElementById("export-form");
+    const d = G.formData(f);
+    const from = d.from || addDays(D.today, -29), to = d.to || D.today;
+    await ensureFrom(from);
+    const ids = d.site ? [d.site] : D.user.siteIds;
+    const inR = (x) => x >= from && x <= to;
+    const mine = (sid) => ids.includes(sid);
+    const emp = (id) => D.empById[id] || {};
+    const name = `abfm-${kind}-${from}-to-${to}.csv`;
+    const T2 = S.TARGETS;
+    if (kind === "checks") G.downloadCsv(name, ["Date", "Time", "Site", "Type", "Staff no", "Employee", "Trade", "Status", "Finding no", "Gaps", "Supply gaps", "Actions", "Note", "Checked by"],
+      D.checks.filter((c) => mine(c.site_id) && inR(c.date)).sort((a, b) => a.date.localeCompare(b.date)).map((c) => [c.date, c.time, siteName(c.site_id), c.type, emp(c.employee_id).staff_no, emp(c.employee_id).name, emp(c.employee_id).trade, c.status, c.finding_no,
+        c.gaps.filter((g) => !g.supply).map((g) => S.itemLabel(g.code)).join("; "), c.gaps.filter((g) => g.supply).map((g) => S.itemLabel(g.code)).join("; "),
+        [...new Set(c.gaps.map((g) => S.actionLabel(g.action)).filter(Boolean))].join("; "), c.note, c.by]));
+    if (kind === "gaps") { const rows = []; D.checks.filter((c) => mine(c.site_id) && inR(c.date)).forEach((c) => c.gaps.forEach((g) => rows.push([c.date, siteName(c.site_id), c.type, emp(c.employee_id).staff_no, emp(c.employee_id).name, S.itemLabel(g.code), (S.ITEMS.find((i) => i.code === g.code) || {}).area || "", g.supply ? "Supply gap" : "Finding", S.actionLabel(g.action), c.by])));
+      G.downloadCsv(name, ["Date", "Site", "Check", "Staff no", "Employee", "Standard", "Area", "Kind", "Action taken", "Checked by"], rows); }
+    if (kind === "submissions") G.downloadCsv(name, ["Date", "Site", "Sent at", "On time", "Sent by", "Staff", "Passed", "Gaps", "Supply gap", "Absent/leave"],
+      D.submissions.filter((x) => mine(x.site_id) && inR(x.date)).sort((a, b) => a.date.localeCompare(b.date)).map((x) => [x.date, siteName(x.site_id), x.time, x.time <= T2.checklistDue ? "Yes" : "Late", x.by, x.total, x.passed, x.gaps, x.supply, x.absent]));
+    if (kind === "audits") G.downloadCsv(name, ["Date", "Site", "Auditor", "With HSE", "Sample", "Grooming /30", "PPE /25", "Communication /25", "Daily control /20", "Total", "Result", "Report sent", "Plan received", "Verified", "Notes"],
+      D.audits.filter((a) => mine(a.site_id) && inR(a.date)).map((a) => [a.date, siteName(a.site_id), a.auditor, a.with_hse, a.sample, a.s_grooming, a.s_ppe, a.s_comm, a.s_control, a.total, a.total >= T2.auditPass ? "Pass" : "Fail", a.report_on, a.plan_on, a.verified_on, a.notes]));
+    if (kind === "actions") G.downloadCsv(name, ["Audit date", "Site", "Finding", "Employee", "Action", "Owner", "Due", "Closed", "Status"],
+      D.actions.filter((x) => { const a = D.auditById[x.audit_id]; return a && mine(a.site_id) && inR(a.date); }).map((x) => { const a = D.auditById[x.audit_id]; return [a.date, siteName(a.site_id), x.finding, emp(x.employee_id).name || "", x.action, x.owner, x.due_on, x.closed_on, x.closed_on ? (x.closed_on <= x.due_on ? "Closed on time" : "Closed late") : x.due_on < D.today ? "Overdue" : "Open"]; }));
+    if (kind === "incidents") G.downloadCsv(name, ["Date", "Time", "Site", "Type", "Employee", "Where", "What happened", "What was done", "Reported by", "Status", "Acknowledged by", "Acknowledged", "Closed", "Outcome"],
+      D.incidents.filter((x) => mine(x.site_id) && inR(x.date)).map((x) => [x.date, x.time, siteName(x.site_id), S.incidentLabel(x.type), emp(x.employee_id).name || "", x.location, x.details, x.action, x.reported_by, x.status, x.ack_by, x.ack_on, x.closed_on, x.outcome]));
+    if (kind === "hr") G.downloadCsv(name, ["Date", "Site", "Staff no", "Employee", "Entry", "Action", "Amount (AED)", "Notes", "Recorded by"],
+      D.discipline.filter((x) => mine(x.site_id) && inR(x.date)).map((x) => [x.date, siteName(x.site_id), emp(x.employee_id).staff_no, emp(x.employee_id).name, S.levelLabel(x.level), x.action, x.amount, x.notes, x.by]));
+    if (kind === "supply") G.downloadCsv(name, ["Requested", "Site", "Staff no", "Employee", "Item", "Uniform size", "Shoe size", "Issued", "Working days"],
+      D.supply.filter((g) => mine(g.site_id) && inR(g.requested_on)).map((g) => [g.requested_on, siteName(g.site_id), emp(g.employee_id).staff_no, emp(g.employee_id).name, g.item, emp(g.employee_id).uniform_size, emp(g.employee_id).shoe_size, g.issued_on, G.supplyAge(g, D.today)]));
+    if (kind === "employees") G.downloadCsv(`abfm-employees-${D.today}.csv`, ["Staff no", "Name", "Trade", "Site", "Active", "Uniform size", "Shoe size", "Trained", "Baseline", "PPE held", "Missing items", "Findings (window)", "Next step"],
+      D.employees.filter((e) => mine(e.site_id)).map((e) => { const n = G.findingsFor(D, e.id, D.today).length; return [e.staff_no, e.name, e.trade, siteName(e.site_id), e.active ? "Yes" : "No", e.uniform_size, e.shoe_size, e.trained_on, e.baseline_on, (e.ppe_held || []).map(S.baselineLabel).join("; "), e.missing, n, n ? S.warningFor(n + 1).action : ""]; }));
+    G.toast("Download started.");
+  }
+
+  // ---------------- site scorecard ----------------
+  function sitePage() {
+    const id = R.parts[1];
+    const s = D.siteById[id];
+    if (!s || !D.user.siteIds.includes(id)) return empty("Site not found.") + `<p><a class="blue" href="#/">Back to the overview</a></p>`;
+    const staff = staffOf(id);
+    const from30 = addDays(D.today, -29);
+    const p30 = G.punctuality(D, id, from30, D.today);
+    const r = G.periodReport(D, addDays(D.today, -13), D.today, [id])[0];
+    const sa = G.siteAudits(D, id);
+    const acts = G.openActions(D).filter((x) => D.auditById[x.audit_id].site_id === id);
+    const inc = D.incidents.filter((x) => x.site_id === id && x.status !== "closed");
+    const warn = staff.map((e) => ({ e, n: G.findingsFor(D, e.id, D.today).length })).filter((x) => x.n >= 2).sort((a, b) => b.n - a.n);
+    const supply = D.supply.filter((g) => g.site_id === id && !g.issued_on);
+    const fm = D.managers.filter((m) => m.sites.includes(id)).map((m) => m.name).join(", ");
+    const days = Array.from({ length: 30 }, (_, i) => addDays(D.today, i - 29));
+    const cal = days.map((d) => { const sub = D.submissions.find((x) => x.site_id === id && x.date === d); return { d, cls: sub ? (sub.time <= T.checklistDue ? "c-g" : "c-a") : d === D.today ? "" : "c-r", l: sub ? `sent ${sub.time}${sub.time > T.checklistDue ? " (late)" : ""} by ${sub.by}` : d === D.today ? "not sent yet" : "not sent" }; });
+    const checkers = G.checkerActivity(D, [id], from30, D.today);
+    return `
+      ${head(`<a href="#/">Overview</a> › Site scorecard`, esc(s.name), `${staff.length} staff · FM Manager ${esc(fm || "–")} · trained ${pct(r.trained)} · baseline ${pct(r.baseline)}`,
+        `<a class="btn small ghost" href="#/checklists/${id}/${D.today}">Today's checks</a><a class="btn small ghost" href="#/reports?tab=period&site=${id}">Site report</a>${D.user.can.audit ? `<a class="btn small" href="#/audits/new?site=${id}">+ Audit</a>` : ""}`)}
+      <div class="mini-kpis mb">
+        <div class="card"><b>${pct(r.passRate, 1)}</b><span>Pass rate, 14 days</span></div>
+        <div class="card"><b>${p30.onTime}/${p30.days}</b><span>Checklists on time, 30 days</span></div>
+        <div class="card"><b>${p30.late}</b><span>Sent late · ${p30.missed} missed</span></div>
+        <div class="card"><b>${G.fieldLast7(D, id, D.today)}/${T.fieldChecksPerWeek}</b><span>Field checks, last 7 days</span></div>
+        <div class="card"><b>${sa[0] ? sa[0].total : "–"}</b><span>Last audit${sa[0] ? ` · ${fmtDate(sa[0].date)}` : ""}</span></div>
+        <div class="card"><b>${acts.length}</b><span>Open audit actions</span></div>
+        <div class="card"><b>${inc.length}</b><span>Open incidents</span></div>
+        <div class="card"><b>${supply.length}</b><span>Supply gaps waiting</span></div>
+      </div>
+      ${trendAndMissed([id], 12, from30, D.today, "Most-missed standards here, last 30 days")}
+      <div class="grid-half mt">
+        <div class="card pad panel"><h3><span>Daily checklist, last 30 days</span><span class="legend"><span><i class="c-g"></i>On time</span><span><i class="c-a"></i>Late</span><span><i class="c-r"></i>Not sent</span></span></h3>
+          <div class="cal">${cal.map((c) => `<i class="${c.cls}" ${c.cls ? "" : 'style="background:#f2f2ef"'} data-tip="${fmtDate(c.d)}: ${esc(c.l)}" tabindex="0"></i>`).join("")}</div>
+          <p class="small muted mt-s">Average send time ${p30.avg || "–"} · due by ${esc(T.checklistDue)}</p>
+          <h3 class="mt">Who is checking <span class="muted small">last 30 days</span></h3>
+          ${checkers.length ? `<table class="t"><thead><tr><th>Checker</th><th>Site</th><th>Camp</th><th>Field</th><th>Gap rate</th></tr></thead><tbody>${checkers.map((c) => `<tr><td>${esc(c.name)}</td><td>${c.site}</td><td>${c.camp}</td><td>${c.field}</td><td>${c.gapRate == null ? "–" : c.gapRate.toFixed(1) + "%"}</td></tr>`).join("")}</tbody></table>` : empty("No checks.")}
+        </div>
+        <div class="card pad panel"><h3>Audit history</h3>
+          ${sa.length ? `<table class="t"><tbody>${sa.slice(0, 8).map((a) => `<tr><td class="nw"><a class="blue" href="#/audits/${a.id}">${fmtDate(a.date, true)}</a></td><td>${esc(a.auditor)}</td><td>${auditScore(a.total)}</td></tr>`).join("")}</tbody></table>` : empty("No audits yet.")}
+          <h3 class="mt">Staff on a warning <span class="muted small">2+ findings in ${T.warningWindowDays} days</span></h3>
+          ${warn.length ? `<table class="t"><tbody>${warn.map(({ e, n }) => `<tr><td><a class="blue" href="#/employees/${e.id}">${esc(e.name)}</a></td><td><span class="pill ${n >= 3 ? "red" : "amber"}">${n}</span></td><td class="small">Next finding: ${n + 1 >= 3 ? "HR action" : "written warning"}</td></tr>`).join("")}</tbody></table>` : empty("None. 👍")}
+          ${inc.length ? `<h3 class="mt">Open incidents</h3><table class="t"><tbody>${inc.map((x) => `<tr><td class="nw">${fmtDate(x.date)}</td><td>${esc(S.incidentLabel(x.type))}</td><td>${incidentPill(x)}</td></tr>`).join("")}</tbody></table>` : ""}
+        </div>
+      </div>`;
+  }
+
+  // ---------------- analytics ----------------
+  function analyticsPage() {
+    const weeks = [4, 8, 12, 26].includes(Number(R.q.weeks)) ? Number(R.q.weeks) : 12;
+    const site = D.mySites.some((x) => x.id === R.q.site) ? R.q.site : "";
+    const ids = site ? [site] : D.user.siteIds;
+    const from = addDays(G.mondayOf(D.today), -7 * (weeks - 1));
+    const to = D.today;
+    const link = (o) => "#/analytics?" + new URLSearchParams({ weeks, ...(site ? { site } : {}), ...o });
+    const m = G.missedStandards(D, ids, from, to);
+    const trades = G.byTrade(D, ids, from, to).filter((t) => t.checks >= 10);
+    const checkers = G.checkerActivity(D, ids, from, to);
+    const weeksBySite = D.mySites.filter((s) => ids.includes(s.id)).map((s) => ({ s, w: G.weekly(D, [s.id], weeks) }));
+    const heatCls = (p) => (p == null ? "c-x" : p >= 100 ? "c-g" : p >= 95 ? "c-g2" : p >= 85 ? "c-a" : "c-r");
+    const audits = D.audits.filter((a) => ids.includes(a.site_id) && a.date >= from);
+    return `
+      ${head("Trends and patterns", "Analytics", `${fmtDate(from, true)} to ${fmtDate(to, true)}${site ? ` · ${esc(siteName(site))}` : " · all my sites"}`,
+        `${[4, 8, 12, 26].map((w) => `<a class="chip ${w === weeks ? "on" : ""}" href="${link({ weeks: w })}">${w} weeks</a>`).join("")}
+         <select data-goto="#/analytics?weeks=${weeks}&site=">${opts(D.mySites, site, "All my sites")}</select>`)}
+      ${trendAndMissed(ids, weeks, from, to, "Most-missed standards")}
+      ${!site && weeksBySite.length > 1 ? `<div class="card pad panel mt"><h3><span>Pass rate by site and week</span><span class="legend"><span><i class="c-g"></i>100%</span><span><i class="c-g2"></i>95–99%</span><span><i class="c-a"></i>85–94%</span><span><i class="c-r"></i>&lt;85%</span><span><i class="c-x"></i>No checks</span></span></h3>
+        <div class="table-wrap"><table class="heat"><thead><tr><th></th>${weeksBySite[0].w.map((x) => `<th>${fmtDate(x.week)}</th>`).join("")}</tr></thead><tbody>
+        ${weeksBySite.map(({ s, w }) => `<tr><td class="name"><a href="#/sites/${s.id}">${esc(s.name)}</a></td>${w.map((x) => `<td class="${heatCls(x.pct)}" data-tip="${esc(s.name)}, week of ${fmtDate(x.week)}: ${x.pct == null ? "no checks" : `${x.pct.toFixed(1)}% (${x.tot} checks)`}" tabindex="0">${x.pct == null ? "–" : Math.round(x.pct)}</td>`).join("")}</tr>`).join("")}
+        </tbody></table></div></div>` : ""}
+      <div class="grid-half mt">
+        <div class="card pad panel"><h3><span>Findings by trade</span><span class="muted small">per 100 checks · trades with 10+ checks</span></h3>
+          ${G.barList(trades.map((t) => ({ label: t.trade, value: t.rate, display: t.rate.toFixed(1), tip: `${t.trade}: ${t.findings} findings in ${t.checks} checks` })))}
+          ${trades.length ? G.tableView(["Trade", "Checks", "Findings", "Per 100 checks"], trades.map((t) => [t.trade, t.checks, t.findings, t.rate.toFixed(1)])) : ""}</div>
+        <div class="card pad panel"><h3><span>Daily checklist punctuality</span><span class="muted small">due by ${esc(T.checklistDue)}</span></h3>
+          <table class="t"><thead><tr><th>Site</th><th>On time</th><th>Late</th><th>Missed</th><th>Avg time</th></tr></thead><tbody>
+          ${D.mySites.filter((s) => ids.includes(s.id)).map((s) => { const p = G.punctuality(D, s.id, from, to); return `<tr><td><a href="#/sites/${s.id}">${esc(s.name)}</a></td><td>${p.onTime} / ${p.days}</td><td class="${p.late ? "amber" : ""}">${p.late}</td><td class="${p.missed ? "red" : ""}">${p.missed}</td><td>${p.avg || "–"}</td></tr>`; }).join("")}
+          </tbody></table></div>
+      </div>
+      <div class="grid-half mt">
+        <div class="card pad panel"><h3><span>Checker activity</span><span class="muted small">a very low gap rate can mean checks are not done properly</span></h3>
+          <div class="table-wrap"><table class="t"><thead><tr><th>Checker</th><th>Days</th><th>Site</th><th>Camp</th><th>Field</th><th>Gaps found</th><th>Gap rate</th></tr></thead><tbody>
+          ${checkers.map((c) => `<tr><td>${esc(c.name)}<br><span class="muted small">${c.sites.map(siteName).map(esc).join(", ")}</span></td><td>${c.days}</td><td>${c.site}</td><td>${c.camp}</td><td>${c.field}</td><td>${c.gaps}</td><td>${c.gapRate == null ? "–" : `<span class="${c.checked >= 50 && c.gapRate < 0.5 ? "amber" : ""}">${c.gapRate.toFixed(1)}%</span>`}</td></tr>`).join("") || `<tr><td colspan="7">${empty("No checks.")}</td></tr>`}
+          </tbody></table></div></div>
+        <div class="card pad panel"><h3><span>Audits in this period</span><span class="muted small">pass mark ${T.auditPass}</span></h3>
+          ${audits.length ? `<table class="t"><thead><tr><th>Date</th><th>Site</th><th>Grooming</th><th>PPE</th><th>Comms</th><th>Control</th><th>Total</th></tr></thead><tbody>${audits.map((a) => `<tr><td class="nw"><a class="blue" href="#/audits/${a.id}">${fmtDate(a.date)}</a></td><td>${esc(siteName(a.site_id))}</td><td>${a.s_grooming}</td><td>${a.s_ppe}</td><td>${a.s_comm}</td><td>${a.s_control}</td><td>${auditScore(a.total)}</td></tr>`).join("")}</tbody></table>` : empty("No audits in this period.")}</div>
+      </div>`;
+  }
+
+  // ---------------- incidents ----------------
+  const incidentPill = (x) => (x.status === "closed" ? `<span class="pill green">Closed</span>` : x.status === "acknowledged" ? `<span class="pill blue">Acknowledged</span>` : x.type === "serious_conduct" ? `<span class="pill red">Open</span>` : `<span class="pill amber">Open</span>`);
+  function incidentsPage() {
+    const st = ["open", "all", "closed"].includes(R.q.status) ? R.q.status : "open";
+    const list = D.incidents.filter((x) => (st === "all" ? true : st === "open" ? x.status !== "closed" : x.status === "closed")).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
+    const can = D.user.can.incidents;
+    return `
+      ${head("Reported from the field", "Incidents", "Difficult customers, complaints and serious conduct. The supervisor reports the same day; the FM Manager acknowledges and closes.",
+        `<span class="chips">${["open", "closed", "all"].map((k) => `<a href="#/incidents?status=${k}" class="chip ${k === st ? "on" : ""}">${k[0].toUpperCase() + k.slice(1)}</a>`).join("")}</span>`)}
+      <div class="card pad">${list.length === 0 ? empty(st === "open" ? "No open incidents. 👍" : "Nothing here.") : `<div class="table-wrap"><table class="t">
+        <thead><tr><th>Reported</th><th>Site</th><th>Type</th><th>Staff</th><th>What happened</th><th>Status</th><th></th></tr></thead><tbody>
+        ${list.map((x) => `<tr>
+          <td class="nw">${fmtDate(x.date)} ${esc(x.time)}<br><span class="muted small">${esc(x.reported_by)}</span></td><td>${esc(siteName(x.site_id))}<br><span class="muted small">${esc(x.location)}</span></td>
+          <td>${esc(S.incidentLabel(x.type))}</td><td>${x.employee_id ? `<a class="blue" href="#/employees/${x.employee_id}">${esc(empName(x.employee_id))}</a>` : `<span class="muted">–</span>`}</td>
+          <td class="small" style="max-width:340px">${esc(x.details)}${x.action ? `<br><span class="muted">Done: ${esc(x.action)}</span>` : ""}${x.outcome ? `<br><span class="green">Outcome: ${esc(x.outcome)}</span>` : ""}</td>
+          <td class="nw">${incidentPill(x)}${x.ack_by ? `<br><span class="muted small">${esc(x.ack_by)} · ${fmtDate(x.ack_on)}</span>` : ""}</td>
+          <td class="nw">${can ? (x.status === "closed" ? `<button class="linkbtn" data-inc="${x.id}" data-op="reopen">Reopen</button>` : `${x.status === "open" ? `<button class="btn small ghost" data-inc="${x.id}" data-op="ack">Acknowledge</button> ` : ""}<button class="btn small ghost" data-inc="${x.id}" data-op="close">Close…</button>`) : ""}</td></tr>`).join("")}
+      </tbody></table></div>`}</div>
+      <details class="card pad panel mt"><summary class="linkbtn" style="cursor:pointer">+ Record an incident</summary>
+        <form id="incident-form" class="grid-form mt">
+          <label class="field">Site<select name="site_id" required>${opts(D.mySites, "", "Choose…")}</select></label>
+          <label class="field">Type<select name="type">${S.INCIDENT_TYPES.map((t) => `<option value="${t.code}">${esc(t.label)}</option>`).join("")}</select></label>
+          <label class="field">Staff member (optional)<select name="employee_id"><option value="">–</option>${D.employees.filter((e) => e.active && D.user.siteIds.includes(e.site_id)).sort((a, b) => a.name.localeCompare(b.name)).map((e) => `<option value="${e.id}">${esc(e.name)} · ${esc(siteName(e.site_id))}</option>`).join("")}</select></label>
+          <label class="field">Where<input type="text" name="location"></label>
+          <label class="field" style="grid-column:1/-1">What happened<textarea name="details" required></textarea></label>
+          <label class="field" style="grid-column:1/-1">What was done<textarea name="action"></textarea></label>
+          <div><button class="btn small" type="submit">Save incident</button></div>
+        </form></details>`;
+  }
+
+  // ---------------- HR register ----------------
+  function hrPage() {
+    const pending = G.hrPending(D);
+    const reg = [...D.discipline].sort((a, b) => b.date.localeCompare(a.date));
+    const can = D.user.can.discipline;
+    const deduct = (lvl) => (lvl === "hr_action" ? T.deductFurther : "");
+    return `
+      ${head("Warnings and disciplinary steps", "HR register", `Policy ladder: 1st finding verbal warning · repeat: written warning and refresher (FM Manager with HR) · further repeat: HR action, salary deduction${T.deductRepeat || T.deductFurther ? ` (AED ${esc(T.deductRepeat || "–")} / ${esc(T.deductFurther || "–")})` : ""} · serious conduct: removal and HR investigation.`)}
+      <div class="card pad panel mb"><h3>Steps due, not recorded yet <span class="muted small">${pending.length}</span></h3>
+        ${pending.length === 0 ? empty("Everything due has been recorded. 👍") : `<div class="table-wrap"><table class="t"><thead><tr><th>Employee</th><th>Site</th><th>Findings (${T.warningWindowDays} days)</th><th>Due</th><th></th></tr></thead><tbody>
+          ${pending.map((p) => `<tr><td><a class="blue" href="#/employees/${p.emp.id}">${esc(p.emp.name)}</a><br><span class="muted small">${esc(p.emp.staff_no)} · ${esc(p.emp.trade)}</span></td><td>${esc(siteName(p.emp.site_id))}</td>
+            <td><span class="pill ${p.findings >= 3 ? "red" : p.findings === 2 ? "amber" : "grey"}">${p.findings}</span></td>
+            <td class="small">${p.needs.map((n) => `<b>${esc(S.levelLabel(n.level))}</b> <span class="muted">(${esc(n.why)}, ${fmtDate(n.since)})</span>`).join("<br>")}</td>
+            <td class="nw">${can ? p.needs.map((n) => `<button class="btn small ghost" data-record="${p.emp.id}" data-level="${n.level}" data-amount="${esc(deduct(n.level))}">Record ${esc(S.levelLabel(n.level).replace(/^([A-Z])(?=[a-z])/, (c) => c.toLowerCase()))}</button>`).join(" ") : ""}</td></tr>`).join("")}
+        </tbody></table></div>`}
+      </div>
+      <div id="hr-form-slot"></div>
+      <div class="card pad panel"><h3>Register <span class="muted small">${reg.length} entries</span></h3>
+        ${reg.length === 0 ? empty("Nothing recorded yet.") : `<div class="table-wrap"><table class="t"><thead><tr><th>Date</th><th>Employee</th><th>Site</th><th>Entry</th><th>Action / notes</th><th>Amount</th><th>By</th><th></th></tr></thead><tbody>
+          ${reg.map((x) => `<tr><td class="nw">${fmtDate(x.date, true)}</td><td><a class="blue" href="#/employees/${x.employee_id}">${esc(empName(x.employee_id))}</a></td><td>${esc(siteName(x.site_id))}</td>
+            <td>${esc(S.levelLabel(x.level))}</td><td class="small">${esc(x.action)}${x.notes ? `<br><span class="muted">${esc(x.notes)}</span>` : ""}</td><td>${x.amount != null ? `AED ${x.amount}` : ""}</td><td class="small">${esc(x.by)}</td>
+            <td>${can ? `<button class="linkbtn" data-delhr="${x.id}">Delete</button>` : ""}</td></tr>`).join("")}
+        </tbody></table></div>`}
+      </div>`;
+  }
+  function hrForm(empId, level, amount) {
+    const e = D.empById[empId];
+    const levels = D.user.role === "fm_manager" ? S.DISCIPLINE_LEVELS.filter((l) => ["verbal", "written", "refresher"].includes(l.code)) : S.DISCIPLINE_LEVELS;
+    return `<form id="hr-form" class="card pad panel mb" data-emp="${empId}"><h3>Record for ${esc(e ? e.name : "")}</h3><div class="grid-form">
+      <label class="field">Entry<select name="level">${levels.map((l) => `<option value="${l.code}" ${l.code === level ? "selected" : ""}>${esc(l.label)}</option>`).join("")}</select></label>
+      <label class="field">Date<input type="date" name="date" value="${D.today}" max="${D.today}"></label>
+      <label class="field">Action taken<input type="text" name="action" placeholder="e.g. Written warning issued and signed"></label>
+      <label class="field">Amount (AED, if a deduction)<input type="number" name="amount" min="0" step="1" value="${esc(amount || "")}"></label>
+      <label class="field" style="grid-column:1/-1">Notes<textarea name="notes"></textarea></label>
+      <div class="row"><button class="btn small" type="submit">Save</button><button class="btn small ghost" type="button" data-cancelhr>Cancel</button></div></div></form>`;
+  }
+
+  // ---------------- activity log ----------------
+  let ACT = null;
+  async function loadActivity() {
+    if (!D.user.can.activity) { ACT = []; return; }
+    G.busy(true);
+    try { ACT = (await G.api("activity", { limit: 1000 })).activity; } catch (e) { ACT = []; G.toast(e.message, "err"); } finally { G.busy(false); }
+  }
+  function activityPage() {
+    if (!D.user.can.activity) return empty("Only the Administrator, Director, OCO or HR can see the activity log.");
+    const q = (R.q.q || "").toLowerCase();
+    const list = (ACT || []).filter((x) => !q || `${x.user} ${x.action} ${x.details}`.toLowerCase().includes(q));
+    const LABEL = { saveCheck: "Saved a check", submitDay: "Sent daily checklist", addSupply: "Added supply request", issueSupply: "Marked supply issued", trained: "Marked training", createAudit: "Recorded audit", auditStep: "Audit follow-up step", addAction: "Added audit finding", toggleAction: "Closed / reopened action", saveSite: "Changed site", saveUser: "Changed user", changePin: "Changed PIN", saveEmployee: "Changed employee", importEmployees: "Imported staff", saveSettings: "Changed rules", addIncident: "Reported incident", updateIncident: "Updated incident", addDiscipline: "HR register entry", deleteDiscipline: "Deleted HR entry", saveBaseline: "Baseline check", testDigest: "Sent test email" };
+    return `
+      ${head("Who did what, and when", "Activity log", `Latest ${(ACT || []).length} changes. Logins and page views are not logged.`,
+        `<form id="act-filter" class="filters"><input type="search" name="q" value="${esc(R.q.q || "")}" placeholder="Search user, action, name"><button class="btn small navy" type="submit">Search</button></form><button class="btn small ghost" data-reload-act>↻ Refresh</button>`)}
+      <div class="card pad">${list.length === 0 ? empty("Nothing logged yet.") : `<div class="table-wrap"><table class="t"><thead><tr><th>Time</th><th>User</th><th>What</th><th>Details</th></tr></thead><tbody>
+        ${list.slice(0, 1000).map((x) => `<tr><td class="nw small">${esc(x.time)}</td><td>${esc(x.user)}<br><span class="muted small">${esc(S.roleLabel(x.role))}</span></td><td>${esc(LABEL[x.action] || x.action)}</td><td class="small">${esc(x.details)}</td></tr>`).join("")}
+      </tbody></table></div>`}</div>`;
   }
 
   // ---------------- settings ----------------
   function settingsPage() {
-    if (!D.user.can.manageUsers) return head("Setup", "Sites & users") + empty("Only the Administrator or the Director of Operations can manage sites and users.") + pinForm();
+    if (!D.user.can.manageUsers) return head("Setup", "Settings") + empty("Only the Administrator or the Director of Operations can manage sites, users and rules.") + pinForm();
     const edit = D.users.find((x) => x.id === R.q.edit);
     const sites = [...D.sites].sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
     return `
-      ${head("Setup", "Sites & users")}
-      <div class="grid-half">
+      ${head("Setup", "Sites, users & rules")}
+      <div class="tabs"><a href="#/settings" class="${R.q.tab === "rules" ? "" : "on"}">Sites & users</a>${D.user.can.settings ? `<a href="#/settings?tab=rules" class="${R.q.tab === "rules" ? "on" : ""}">Rules & daily email</a>` : ""}</div>
+      ${R.q.tab === "rules" && D.user.can.settings ? rulesForm() : `<div class="grid-half">
         <div class="card pad panel"><h3>Users</h3><div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Role</th><th>Sites</th><th></th></tr></thead><tbody>
           ${D.users.sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name)).map((x) => { const all = ["director", "oco", "hse", "hr", "stores", "admin"].includes(x.role); return `<tr ${x.active ? "" : 'style="opacity:.5"'}>
-            <td><b>${esc(x.name)}</b><br><span class="muted small">${esc(x.username)}</span></td><td class="small">${esc(S.roleLabel(x.role))}</td>
+            <td><b>${esc(x.name)}</b><br><span class="muted small">${esc(x.username)}${x.email ? ` · ${esc(x.email)}` : ""}</span></td><td class="small">${esc(S.roleLabel(x.role))}</td>
             <td class="small">${all ? `<span class="muted">All sites</span>` : x.sites.map(siteName).map(esc).join(", ") || `<span class="red">None</span>`}</td>
             <td class="nw"><a class="linkbtn" href="#/settings?edit=${x.id}">Edit</a> · <button class="linkbtn" data-user-active="${x.id}" data-v="${x.active ? "" : "1"}">${x.active ? "Deactivate" : "Activate"}</button></td></tr>`; }).join("")}
         </tbody></table></div>
@@ -541,6 +868,7 @@
               <label class="field">Full name<input type="text" name="name" value="${edit ? esc(edit.name) : ""}" required></label>
               <label class="field">Role<select name="role">${S.ROLES.map((r) => `<option value="${r.code}" ${(edit ? edit.role : "supervisor") === r.code ? "selected" : ""}>${r.label}</option>`).join("")}</select></label>
               <label class="field">${edit ? "New PIN (leave empty to keep)" : "PIN (4–8 digits)"}<input type="password" name="pin" inputmode="numeric" pattern="\\d{4,8}" ${edit ? "" : "required"}></label>
+              <label class="field">Email (optional, for the daily summary)<input type="email" name="email" value="${edit ? esc(edit.email || "") : ""}"></label>
             </div>
             <div class="field">Sites (for supervisors, camp bosses, site and FM managers)</div>
             <div class="chips mb">${D.sites.filter((s) => s.active).map((s) => `<label class="chip" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" name="sites" value="${s.id}" ${edit && edit.sites.includes(s.id) ? "checked" : ""}> ${esc(s.name)}</label>`).join("")}</div>
@@ -557,7 +885,46 @@
           </div>
           ${pinForm()}
         </div>
-      </div>`;
+      </div>`}`;
+  }
+  function rulesForm() {
+    const num = (k, label, hint, max = 365) => `<label class="field">${label}<input type="number" name="${k}" value="${esc(T[k])}" min="0" max="${max}" required>${hint ? `<span class="muted" style="font-weight:400">${hint}</span>` : ""}</label>`;
+    const dash = T.dashboardUrl || location.href.split("#")[0];
+    return `<form id="rules-form">
+      <div class="grid-half">
+        <div class="card pad panel"><h3>Policy rules</h3>
+          <p class="small muted mb">From the Grooming, Etiquette & Work Efficiency Policy. Changing them here updates the apps, alerts and reports for everyone.</p>
+          <div class="grid-form">
+            ${num("auditPass", "Audit pass mark (out of 100)", "", 100)}
+            ${num("findingCloseDays", "Close audit findings within (days)")}
+            ${num("reportDays", "Send audit report within (days)")}
+            ${num("planDays", "Action plan within (days)")}
+            ${num("reauditDays", "Re-audit a failed site within (days)")}
+            ${num("fieldChecksPerWeek", "Field checks per site per week", "", 50)}
+            ${num("supplyWorkingDays", "Stores supply target (working days)")}
+            ${num("warningWindowDays", "Count repeat findings over (days)")}
+            <label class="field">Daily checklist due by<input type="time" name="checklistDue" value="${esc(T.checklistDue)}" required></label>
+            <label class="field">Training deadline<input type="date" name="trainingDeadline" value="${esc(T.trainingDeadline)}"></label>
+          </div>
+          <h3 class="mt">Salary deductions (HR to confirm under labour law)</h3>
+          <div class="grid-form">
+            <label class="field">Repeat finding (AED)<input type="number" name="deductRepeat" value="${esc(T.deductRepeat)}" min="0" placeholder="Not set"></label>
+            <label class="field">Further repeat (AED)<input type="number" name="deductFurther" value="${esc(T.deductFurther)}" min="0" placeholder="Not set"></label>
+          </div>
+        </div>
+        <div class="card pad panel"><h3>Daily email summary</h3>
+          <p class="small muted mb">Each evening, every manager login that has an email address gets a summary for their own sites: checklists not sent or late, overdue audit actions, failing sites, open incidents and slow supply. Quiet days send nothing.</p>
+          <label class="confirm" style="margin-top:0"><input type="checkbox" name="digestOn" ${T.digestOn === "1" ? "checked" : ""}> Send the daily summary</label>
+          <div class="grid-form">
+            <label class="field">Send at (hour, Dubai time)<select name="digestHour">${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${Number(T.digestHour) === h ? "selected" : ""}>${String(h).padStart(2, "0")}:00</option>`).join("")}</select></label>
+            <label class="field">Dashboard link in the email<input type="text" name="dashboardUrl" value="${esc(dash)}"></label>
+          </div>
+          <p class="small muted">First time only: in the Apps Script editor run <b>setupDailyEmail</b> once, so Google lets the script send email. Add email addresses to users on the Sites & users tab.</p>
+          <button type="button" class="btn small ghost mt-s" data-test-email>Send a test summary to me${D.user.email ? ` (${esc(D.user.email)})` : ""}</button>
+        </div>
+      </div>
+      <div class="row mt" style="justify-content:flex-end"><button class="btn" type="submit">Save rules</button></div>
+    </form>`;
   }
   function pinForm() {
     return `<div class="card pad panel"><h3>Change my PIN</h3><form id="pin-form" class="grid-form">
@@ -586,7 +953,21 @@
     if (d.logout !== undefined) { ev.preventDefault(); G.logout(); }
     else if (d.refresh !== undefined) { ev.preventDefault(); await reload(); G.toast("Up to date."); }
     else if (d.print !== undefined) window.print();
-    else if (d.csv) downloadCsv(d.csv);
+    else if (d.csvReport) { const [f, t, n] = d.csvReport.split("|"); reportCsv(f, t, n, d.sites ? d.sites.split(",") : D.user.siteIds); }
+    else if (d.export) runExport(d.export).catch((e) => G.toast(e.message, "err"));
+    else if (d.inc) {
+      let outcome = "";
+      if (d.op === "close") { outcome = prompt("Outcome (what was done to close it):", ""); if (outcome === null) return; }
+      act("updateIncident", { id: d.inc, op: d.op, outcome }, { ack: "Acknowledged.", close: "Closed.", reopen: "Reopened." }[d.op]);
+    }
+    else if (d.record) { const slot = document.getElementById("hr-form-slot"); slot.innerHTML = hrForm(d.record, d.level, d.amount); slot.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    else if (d.cancelhr !== undefined) document.getElementById("hr-form-slot").innerHTML = "";
+    else if (d.delhr) { if (confirm("Delete this HR register entry?")) act("deleteDiscipline", { id: d.delhr }, "Deleted."); }
+    else if (d.reloadAct !== undefined) { await loadActivity(); render(); }
+    else if (d.testEmail !== undefined) {
+      G.busy(true);
+      try { await G.api("testDigest"); G.toast("Test summary sent. Check your inbox."); } catch (e) { G.toast(e.message, "err"); } finally { G.busy(false); }
+    }
     else if (d.addrow !== undefined) {
       AF.rows++;
       document.getElementById("finding-rows").insertAdjacentHTML("beforeend", findingRow(AF.rows - 1, AF.site));
@@ -628,6 +1009,14 @@
     const f = ev.target;
     const d = G.formData(f);
     if (f.id === "emp-filter") location.hash = "#/employees?" + new URLSearchParams(Object.entries(d).filter(([, v]) => v));
+    else if (f.id === "period-form") location.hash = "#/reports?" + new URLSearchParams({ tab: "period", ...Object.fromEntries(Object.entries(d).filter(([, v]) => v)) });
+    else if (f.id === "act-filter") location.hash = "#/activity?" + new URLSearchParams(d.q ? { q: d.q } : {});
+    else if (f.id === "incident-form") act("addIncident", d, "Incident recorded.");
+    else if (f.id === "hr-form") act("addDiscipline", { employee_id: f.dataset.emp, ...d }, "Recorded in the HR register.");
+    else if (f.id === "rules-form") {
+      const st = { ...d, digestOn: d.digestOn ? "1" : "0" };
+      act("saveSettings", { settings: st }, (o) => (o.warning === "email" ? "Saved. To send email, run setupDailyEmail once in the Apps Script editor." : "Rules saved."));
+    }
     else if (f.id === "audit-form") {
       const findings = [];
       for (let i = 0; i < AF.rows; i++) if (d[`finding_${i}`]) findings.push({ finding: d[`finding_${i}`], employee_id: d[`employee_${i}`], action: d[`action_${i}`], owner: d[`owner_${i}`], due_on: d[`due_${i}`] });
@@ -645,7 +1034,7 @@
       const rows = text.split(/\r?\n/).map(parseCsvLine).filter((r) => r.length >= 2);
       act("importEmployees", { rows }, (o) => `Import done: ${o.added} added, ${o.updated} updated${o.skipped ? `, ${o.skipped} skipped` : ""}.`);
     } else if (f.id === "user-form") {
-      act("saveUser", { id: f.dataset.id || undefined, username: d.username, name: d.name, role: d.role, pin: d.pin, sites: [].concat(d.sites || []) }, "Saved.", () => { location.hash = "#/settings"; render(); });
+      act("saveUser", { id: f.dataset.id || undefined, username: d.username, name: d.name, role: d.role, pin: d.pin, email: d.email || "", sites: [].concat(d.sites || []) }, "Saved.", () => { location.hash = "#/settings"; render(); });
     } else if (f.id === "site-form") act("saveSite", { name: d.name }, "Site added.");
     else if (f.id === "pin-form") {
       G.busy(true);

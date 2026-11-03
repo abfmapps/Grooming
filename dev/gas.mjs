@@ -68,6 +68,15 @@ export function loadBackend({ dataFile, photoDir }) {
       base64Decode: (s) => bytes(Buffer.from(s, "base64")),
       newBlob: (data, type, name) => ({ data, type, name }),
     },
+    MailApp: {
+      getRemainingDailyQuota: () => 100,
+      sendEmail: (m) => { fs.appendFileSync(path.join(path.dirname(dataFile), "mail.log"), `--- ${new Date().toISOString()} to ${m.to}: ${m.subject}\n${m.htmlBody}\n`); },
+    },
+    ScriptApp: {
+      getProjectTriggers: () => (store.triggers || []).map((t) => ({ getHandlerFunction: () => t.fn, _t: t })),
+      deleteTrigger: (t) => { store.triggers = (store.triggers || []).filter((x) => x !== t._t); },
+      newTrigger: (fn) => { const t = { fn }; const b = { timeBased: () => b, everyDays: (n) => ((t.days = n), b), atHour: (h) => ((t.hour = h), b), inTimezone: () => b, create: () => { (store.triggers ||= []).push(t); return t; } }; return b; },
+    },
     DriveApp: {
       getFoldersByName: () => ({ hasNext: () => true, next: () => ({ createFile: (blob) => { const id = crypto.randomBytes(8).toString("hex"); fs.writeFileSync(path.join(photoDir, id), JSON.stringify({ type: blob.type, data: Buffer.from(blob.data.map((x) => x & 255)).toString("base64") })); return { getId: () => id }; } }) }),
       createFolder: () => null,
@@ -75,7 +84,7 @@ export function loadBackend({ dataFile, photoDir }) {
     },
   };
   vm.createContext(ctx);
-  const code = fs.readFileSync(new URL("../setup/grooming-backend.gs", import.meta.url), "utf8");
+  const code = fs.readFileSync(process.env.GAS_FILE || new URL("../setup/grooming-backend.gs", import.meta.url), "utf8");
   // Each request gets a fresh per-request cache, like Apps Script.
   vm.runInContext(code + "\nthis.__reset = () => { for (const k in cache_) delete cache_[k]; };", ctx);
   return {
