@@ -84,7 +84,7 @@
           <div class="brand"><img src="assets/logo.png" alt="Al Bonian FM" class="brand-logo"><b>Grooming<br>Control</b></div>
           <nav class="nav">${nav().map(([g, items]) => `<div class="nav-group">${g}</div>${items.map(([p, l, ic]) => `<a href="#/${p}" class="${page === p ? "on" : ""}">${G.icon(ic)}${l}${counts[p] ? `<span class="cnt ${["incidents", "hr"].includes(p) ? "hot" : ""}">${counts[p]}</span>` : ""}</a>`).join("")}`).join("")}</nav>
           <div class="user"><div class="avatar">${initials(D.user.name)}</div><div><b>${esc(D.user.name)}</b>${esc(S.roleLabel(D.user.role))}
-            <div>${D.user.field ? `<a href="index.html">Checklist app</a> · ` : ""}<a href="#" data-logout>Log out</a></div></div></div>
+            <div>${D.user.field ? `<a href="index.html">Checklist app</a> · ` : ""}<a href="#" data-logout>Log out</a></div><div class="small muted">Version ${G.version}</div></div></div>
         </aside>
         <main class="main">${D.outdatedBackend ? `<div class="notice no-print"><b>Update needed:</b> paste the latest <code>setup/grooming-backend.gs</code> into your Google Apps Script and deploy a new version to turn on incidents, the HR register, rules and the activity log (README, “Updating”).</div>` : ""}${body}</main>
       </div>`;

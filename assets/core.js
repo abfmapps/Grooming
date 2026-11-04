@@ -559,10 +559,18 @@
   });
 
   // Register the service worker (installs the app and keeps it fast).
-  if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+  if ("serviceWorker" in navigator && location.protocol === "https:") {
+    // A new version takes over: reload once so the screen shows it. Check for updates on open and when the app comes back to the front.
+    const hadController = !!navigator.serviceWorker.controller; let reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadController && !reloaded) { reloaded = true; location.reload(); } });
+    navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((reg) => {
+      reg.update().catch(() => {});
+      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reg.update().catch(() => {}); });
+    }).catch(() => {});
+  }
 
   window.G = {
-    api, session, login, logout, esc, nowHM, ordinal, icon, siteChecklist, installButton, initials, addDays, daysBetween, workingDaysBetween, todayLocal, fmtDate, fmtDay, pct, plural,
+    version: "9", api, session, login, logout, esc, nowHM, ordinal, icon, siteChecklist, installButton, initials, addDays, daysBetween, workingDaysBetween, todayLocal, fmtDate, fmtDay, pct, plural,
     toast, busy, formData, shrinkPhoto, loginView,
     findingsFor, index, siteAudits, openActions, supplyAge, fieldLast7, overview, controlEvidence, monthlyReport, periodReport,
     mondayOf, weekly, missedStandards, byTrade, punctuality, coverage, checkerActivity, hrPending, lineChart, barList, tableView, downloadCsv,
