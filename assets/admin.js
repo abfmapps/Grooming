@@ -84,6 +84,8 @@
   const siteName = (id) => (D.siteById[id] || {}).name || "–";
   const empName = (id) => (D.empById[id] || {}).name || "–";
   const head = (eyebrow, title, sub, right = "") => `<div class="head"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1>${sub ? `<div class="muted small mt-s">${sub}</div>` : ""}</div>${right ? `<div class="filters no-print">${right}</div>` : ""}</div>`;
+  /** A page that can't be shown: keeps the heading and a way back. */
+  const blocked = (title, text, back = "#/", backLabel = "Back to the overview") => `${head("", esc(title))}<div class="card pad"><p class="muted">${text}</p><p class="mt-s"><a class="blue" href="${back}">${backLabel}</a></p></div>`;
   const empty = (t) => `<p class="muted" style="padding:8px 0">${t}</p>`;
   const auditScore = (t) => `<span class="nw"><span class="score" ${t < T.auditPass ? 'style="color:var(--red)"' : ""}>${t}</span> <span class="pill ${t >= T.auditPass ? "green" : "red"}">${t >= T.auditPass ? "Pass" : "Fail"}</span></span>`;
   const stripClass = (d) => (d.pct === null ? (d.sent && G.siteChecklist() ? "c-g" : "c-x") : !d.sent && G.siteChecklist() ? "c-x" : d.pct >= 100 ? "c-g" : d.pct >= 90 ? "c-g2" : d.pct >= 80 ? "c-a" : "c-r");
@@ -172,7 +174,7 @@
 
   function siteDayPage(siteId, date) {
     const s = D.siteById[siteId];
-    if (!s) return empty("Site not found.");
+    if (!s) return blocked("Site not found", "This site doesn't exist or is switched off.", "#/checklists", "Back to daily checklists");
     const sub = D.submissions.find((x) => x.site_id === siteId && x.date === date);
     const rows = D.checks.filter((c) => c.site_id === siteId && c.date === date);
     const checkedSite = new Set(rows.filter((c) => c.type === "site").map((c) => c.employee_id));
@@ -219,7 +221,7 @@
 
   let AF = null; // new-audit form state
   function newAuditPage() {
-    if (!D.user.can.audit) return empty("Only the OCO, HSE or Director can record audits.");
+    if (!D.user.can.audit) return blocked("Record an audit", "Only the Operations Control Officer or the Director of Operations can record audits.", "#/audits", "Back to audits");
     const siteId = D.mySites.some((s) => s.id === R.q.site) ? R.q.site : "";
     const ev = siteId ? G.controlEvidence(D, siteId, D.today) : null;
     if (!AF || AF.site !== siteId) AF = { site: siteId, date: D.today, scores: { s_grooming: 30, s_ppe: 25, s_comm: 25, s_control: ev ? ev.suggested : 20 }, rows: 3 };
@@ -272,7 +274,7 @@
 
   function auditPage(id) {
     const a = D.auditById[id];
-    if (!a) return empty("Audit not found.");
+    if (!a) return blocked("Audit not found", "This audit doesn't exist or belongs to a site you can't see.", "#/audits", "Back to audits");
     const acts = D.actions.filter((x) => x.audit_id === id);
     const hist = G.siteAudits(D, a.site_id);
     const at = hist.indexOf(a);
@@ -411,7 +413,7 @@
 
   function employeePage(id) {
     const e = D.empById[id];
-    if (!e) return empty("Employee not found.");
+    if (!e) return blocked("Employee not found", "This person isn't in your sites.", "#/employees", "Back to employees");
     const finds = G.findingsFor(D, id, D.today);
     const n = finds.length;
     const fm = D.managers.find((m) => m.sites.includes(e.site_id));
@@ -678,7 +680,7 @@
   function sitePage() {
     const id = R.parts[1];
     const s = D.siteById[id];
-    if (!s || !D.user.siteIds.includes(id)) return empty("Site not found.") + `<p><a class="blue" href="#/">Back to the overview</a></p>`;
+    if (!s || !D.user.siteIds.includes(id)) return blocked("Site not found", "This site doesn't exist or is switched off.");
     const staff = staffOf(id);
     const from30 = addDays(D.today, -29);
     const p30 = G.punctuality(D, id, from30, D.today);
@@ -841,7 +843,7 @@
     try { ACT = (await G.api("activity", { limit: 1000 })).activity; } catch (e) { ACT = []; G.toast(e.message, "err"); } finally { G.busy(false); }
   }
   function activityPage() {
-    if (!D.user.can.activity) return empty("Only the Administrator, Director, OCO or HR can see the activity log.");
+    if (!D.user.can.activity) return blocked("Activity log", "Only the Operations Control Officer, Director of Operations or HR can see the activity log.");
     const q = (R.q.q || "").toLowerCase();
     const list = (ACT || []).filter((x) => !q || `${x.user} ${x.action} ${x.details}`.toLowerCase().includes(q));
     const LABEL = { saveCheck: "Saved a check", submitDay: "Sent daily checklist", addSupply: "Added supply request", issueSupply: "Marked supply issued", trained: "Marked training", createAudit: "Recorded audit", auditStep: "Audit follow-up step", addAction: "Added audit finding", toggleAction: "Closed / reopened action", saveSite: "Changed site", saveUser: "Changed user", changePin: "Changed PIN", saveEmployee: "Changed employee", importEmployees: "Imported staff", saveSettings: "Changed rules", addIncident: "Reported incident", updateIncident: "Updated incident", addDiscipline: "HR register entry", deleteDiscipline: "Deleted HR entry", saveBaseline: "Baseline check", testDigest: "Sent test email" };
