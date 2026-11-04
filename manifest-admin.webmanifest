@@ -4,7 +4,7 @@
   "description": "Al Bonian FM grooming control dashboard for managers.",
   "id": "./admin.html",
   "start_url": "./admin.html",
-  "scope": "./",
+  "scope": "./admin.html",
   "display": "standalone",
   "background_color": "#f5f6f8",
   "theme_color": "#ffffff",

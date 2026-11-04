@@ -549,13 +549,13 @@
   /** An "Install app" button: shown on Android/desktop Chrome when installable, and on iPhone with instructions. */
   function installButton(cls = "") {
     if (standalone()) return "";
-    return `<button type="button" class="install-btn ${cls}" data-install ${deferredInstall || isIOS ? "" : "hidden"}>${icon("download")}Install app</button>`;
+    return `<button type="button" class="install-btn ${cls}" data-install>${icon("download")}Install app</button>`;
   }
   document.addEventListener("click", async (e) => {
     const b = e.target.closest && e.target.closest("[data-install]");
     if (!b) return;
     if (deferredInstall) { deferredInstall.prompt(); await deferredInstall.userChoice.catch(() => {}); deferredInstall = null; b.hidden = true; return; }
-    toast(isIOS ? "In Safari, tap the Share button, then “Add to Home Screen”." : "Open the browser menu (⋮) and choose “Install app” or “Add to Home screen”.");
+    toast(isIOS ? "Open this page in Safari, tap the Share button, then “Add to Home Screen”." : "Open the browser menu (⋮) and choose “Install app” or “Add to Home screen”. If it says “Open app”, it's already installed.");
   });
 
   // Register the service worker (installs the app and keeps it fast).
@@ -570,7 +570,7 @@
   }
 
   window.G = {
-    version: "9", api, session, login, logout, esc, nowHM, ordinal, icon, siteChecklist, installButton, initials, addDays, daysBetween, workingDaysBetween, todayLocal, fmtDate, fmtDay, pct, plural,
+    version: "10", api, session, login, logout, esc, nowHM, ordinal, icon, siteChecklist, installButton, initials, addDays, daysBetween, workingDaysBetween, todayLocal, fmtDate, fmtDay, pct, plural,
     toast, busy, formData, shrinkPhoto, loginView,
     findingsFor, index, siteAudits, openActions, supplyAge, fieldLast7, overview, controlEvidence, monthlyReport, periodReport,
     mondayOf, weekly, missedStandards, byTrade, punctuality, coverage, checkerActivity, hrPending, lineChart, barList, tableView, downloadCsv,
