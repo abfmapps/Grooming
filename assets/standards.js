@@ -44,7 +44,7 @@ window.STD = (function () {
   const TARGETS = {
     auditPass: 85, findingCloseDays: 7, reportDays: 2, planDays: 3, reauditDays: 14,
     fieldChecksPerWeek: 3, supplyWorkingDays: 5, warningWindowDays: 90, trainingDeadline: "2026-11-25",
-    checklistDue: "18:00", deductRepeat: "", deductFurther: "", digestOn: "0", digestHour: 19, dashboardUrl: "",
+    checklistDue: "18:00", siteChecklist: "1", deductRepeat: "", deductFurther: "", digestOn: "0", digestHour: 19, dashboardUrl: "",
   };
   /* Incidents supervisors report the same day (policy: difficult customers, serious conduct). */
   const INCIDENT_TYPES = [

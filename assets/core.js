@@ -208,6 +208,10 @@
   const supplyAge = (g, today) => workingDaysBetween(g.requested_on, g.issued_on || today);
   const fieldLast7 = (D, siteId, today) => D.checks.filter((c) => c.site_id === siteId && c.type === "field" && c.date >= addDays(today, -6) && c.date <= today).length;
 
+  /** Sites send a daily checklist (supervisors on site), or checks come from the Camp Boss and HSE only. */
+  const siteChecklist = () => T.siteChecklist !== "0";
+  const countsType = (t) => (siteChecklist() ? t === "site" : t === "site" || t === "camp");
+
   function overview(D) {
     const today = D.today;
     const from = addDays(today, -13);
@@ -215,7 +219,7 @@
     const acts = openActions(D);
     const comp = (siteId, a, b) => {
       let ok = 0, tot = 0;
-      for (const c of D.checks) if (c.type === "site" && c.site_id === siteId && c.date >= a && c.date <= b && ["pass", "supply", "gaps"].includes(c.status)) { tot++; if (c.status !== "gaps") ok++; }
+      for (const c of D.checks) if (countsType(c.type) && c.site_id === siteId && c.date >= a && c.date <= b && ["pass", "supply", "gaps"].includes(c.status)) { tot++; if (c.status !== "gaps") ok++; }
       return { ok, tot };
     };
     const rows = D.mySites.map((s) => {
@@ -228,7 +232,8 @@
       const sa = siteAudits(D, s.id);
       const a = acts.filter((x) => D.auditById[x.audit_id].site_id === s.id);
       const sub = D.submissions.find((x) => x.site_id === s.id && x.date === today);
-      return {
+      const checkedToday = new Set(D.checks.filter((c) => c.site_id === s.id && c.date === today).map((c) => c.employee_id)).size;
+      return { checkedToday,
         site: s, staff: staffCount(s.id), manager: D.managers.filter((m) => m.sites.includes(s.id)).map((m) => m.name).join(", "),
         todayAt: sub ? sub.time : null, strip, lastAudit: sa[0] || null, open: a.length, overdue: a.filter((x) => x.due_on < today).length,
       };
@@ -238,6 +243,7 @@
     const audited = rows.filter((r) => r.lastAudit);
     const staff = D.employees.filter((e) => e.active && D.user.siteIds.includes(e.site_id));
     const kpi = {
+      staffTotal: staff.length, checkedToday: rows.reduce((a, r) => a + r.checkedToday, 0),
       sites: rows.length, sentToday: rows.filter((r) => r.todayAt).length,
       compliance: now.tot ? (100 * now.ok) / now.tot : null, prev: prev.tot ? (100 * prev.ok) / prev.tot : null,
       open: acts.length, overdue: acts.filter((x) => x.due_on < today).length,
@@ -253,6 +259,7 @@
 
   function alerts(D, rows) {
     const today = D.today, out = [];
+    const notAudited = [], lowField = [], notSent = [];
     for (const r of rows) {
       const sa = siteAudits(D, r.site.id);
       if (sa.length >= 2 && sa[0].total < T.auditPass && sa[1].total < T.auditPass) out.push({ level: "red", title: `${r.site.name} failed 2 audits in a row`, detail: "Escalate to the Director of Operations", href: `#/audits/${sa[0].id}` });
@@ -265,15 +272,17 @@
         }
         if (!last.report_on && daysBetween(last.date, today) > T.reportDays) out.push({ level: "amber", title: `Audit report not sent: ${r.site.name}`, detail: `Due ${T.reportDays} days after the audit`, href: `#/audits/${last.id}` });
       }
-      if (!last || daysBetween(last.date, today) > 31) out.push({ level: "grey", title: `${r.site.name} not audited in the last month`, detail: "Every site is audited at least monthly", href: `#/audits/new?site=${r.site.id}` });
-      if (!r.todayAt && r.staff > 0) {
-        const missed = r.strip.filter((d) => !d.sent && d.date < today).length;
-        const past = nowHM() > T.checklistDue;
-        out.push({ level: past ? "amber" : "grey", title: `${r.site.name}: today's checklist ${past ? "overdue" : "not sent yet"}`, detail: `Due by ${T.checklistDue}${missed ? ` · ${plural(missed, "missed day")} in the last 13` : ""}`, href: `#/sites/${r.site.id}` });
-      }
-      const f = fieldLast7(D, r.site.id, today);
-      if (r.staff > 0 && f < T.fieldChecksPerWeek) out.push({ level: "grey", title: `${r.site.name}: ${f} of ${T.fieldChecksPerWeek} field checks this week`, detail: "Random checks during work, last 7 days" });
+      if (r.staff > 0 && (!last || daysBetween(last.date, today) > 31)) notAudited.push(r.site.name);
+      if (siteChecklist() && !r.todayAt && r.staff > 0) notSent.push(r.site.name);
+      if (r.staff > 0 && fieldLast7(D, r.site.id, today) < T.fieldChecksPerWeek) lowField.push(r.site.name);
     }
+    const names = (l) => l.slice(0, 3).join(", ") + (l.length > 3 ? ` and ${l.length - 3} more` : "");
+    if (notSent.length) {
+      const past = nowHM() > T.checklistDue;
+      out.push({ level: past ? "amber" : "grey", title: `${plural(notSent.length, "site")}: today's checklist ${past ? "overdue" : "not sent yet"}`, detail: `Due by ${T.checklistDue} · ${names(notSent)}`, href: "#/checklists" });
+    }
+    if (notAudited.length) out.push({ level: "grey", title: `${plural(notAudited.length, "site")} not audited in the last month`, detail: `Every site is audited at least monthly · ${names(notAudited)}`, href: "#/audits" });
+    if (lowField.length) out.push({ level: "grey", title: `${plural(lowField.length, "site")} below ${T.fieldChecksPerWeek} field checks this week`, detail: `Random checks during work, last 7 days · ${names(lowField)}`, href: "#/analytics" });
     const mine = (x) => D.user.siteIds.includes(x.site_id);
     const serious = D.incidents.filter((x) => mine(x) && x.type === "serious_conduct" && x.status !== "closed");
     if (serious.length) out.push({ level: "red", title: `${plural(serious.length, "serious conduct incident")} open`, detail: "Removal from site, HR investigation, OCO informed", href: "#/incidents" });
@@ -314,7 +323,7 @@
     return D.mySites.filter((s) => !siteIds || siteIds.includes(s.id)).map((s) => {
       const st = siteStart(D, s.id);
       const days = Math.max(0, daysBetween(st > from ? st : from, to) + 1);
-      const site = D.checks.filter((c) => c.site_id === s.id && c.type === "site" && inRange(c.date) && ["pass", "supply", "gaps"].includes(c.status));
+      const site = D.checks.filter((c) => c.site_id === s.id && countsType(c.type) && inRange(c.date) && ["pass", "supply", "gaps"].includes(c.status));
       const finds = D.checks.filter((c) => c.site_id === s.id && c.status === "gaps" && inRange(c.date));
       const audits = siteAudits(D, s.id).filter((a) => inRange(a.date)).reverse();
       const acts = D.actions.filter((x) => audits.some((a) => a.id === x.audit_id));
@@ -351,7 +360,7 @@
     const start = addDays(mondayOf(D.today), -7 * (weeks - 1));
     const out = Array.from({ length: weeks }, (_, i) => ({ week: addDays(start, 7 * i), ok: 0, tot: 0, findings: 0 }));
     for (const c of D.checks) {
-      if (c.type !== "site" || c.date < start || !siteIds.includes(c.site_id) || !["pass", "supply", "gaps"].includes(c.status)) continue;
+      if (!countsType(c.type) || c.date < start || !siteIds.includes(c.site_id) || !["pass", "supply", "gaps"].includes(c.status)) continue;
       const w = out[Math.floor(daysBetween(start, c.date) / 7)];
       if (!w) continue;
       w.tot++;
@@ -520,7 +529,7 @@
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 
   window.G = {
-    api, session, login, logout, esc, nowHM, ordinal, icon, initials, addDays, daysBetween, workingDaysBetween, todayLocal, fmtDate, fmtDay, pct, plural,
+    api, session, login, logout, esc, nowHM, ordinal, icon, siteChecklist, initials, addDays, daysBetween, workingDaysBetween, todayLocal, fmtDate, fmtDay, pct, plural,
     toast, busy, formData, shrinkPhoto, loginView,
     findingsFor, index, siteAudits, openActions, supplyAge, fieldLast7, overview, controlEvidence, monthlyReport, periodReport,
     mondayOf, weekly, missedStandards, byTrade, punctuality, checkerActivity, hrPending, lineChart, barList, tableView, downloadCsv,

@@ -73,6 +73,8 @@ Send the checklist link on WhatsApp with each person's username and PIN. To inst
 - Repeat findings in the last 90 days are counted automatically and the policy's next step is shown: verbal warning → written warning and refresher → HR.
 - End of day: summary and **Send to Head Office** (only once everyone is checked). Shows **overdue** after the due time (default 18:00).
 - **Report an incident**: difficult customer, complaint, serious conduct, damage. The FM Manager sees it straight away.
+- **Camp Boss** works by camp, not by site: he picks Al Quoz Camp, Jafza Camp or Site Accommodation and checks everyone living there before they leave, whatever site they work on. Each person's camp comes from the *accommodation* field.
+- **HSE officers** use the phone app on any site for site and random field checks.
 - **Training & baseline**: mark who attended the toolbox talk; record each person's sizes, PPE held and missing items. Unticked items go to Stores automatically.
 
 **Dashboard (desktop)**
@@ -87,7 +89,7 @@ Send the checklist link on WhatsApp with each person's username and PIN. To inst
 - **Supply gaps**, **Training & baseline** coverage by site.
 - **Reports & exports**: monthly COO report, period report for any dates (this week, last week, 30 or 90 days, or custom), both printable and as CSV; and **9 data exports** for Excel (checks, gaps, checklists sent, audits, audit actions, incidents, HR register, supply, employees).
 - **Activity log**: who changed what and when.
-- **Rules**: pass mark, deadlines, field-check target, supply target, warning window, checklist due time, training deadline and deduction amounts, all editable without touching code.
+- **Rules**: whether sites send a daily checklist (switch it off while only the Camp Boss and HSE use the app), pass mark, deadlines, field-check target, supply target, warning window, checklist due time, training deadline and deduction amounts, all editable without touching code.
 
 The checklist items are in [`assets/standards.js`](assets/standards.js). After editing anything in `assets/`, change `VERSION` at the top of `sw.js` (e.g. `v1` → `v2`) so installed phones pick up the update.
 

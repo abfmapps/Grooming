@@ -4,6 +4,7 @@
   const { esc, initials, fmtDate, fmtDay, plural } = G;
   const root = document.getElementById("root");
   const SITE_KEY = "abfm_grooming_site";
+  const CAMP_KEY = "abfm_grooming_camp";
   let F = null;        // data from the backend for the chosen site
   let CF = null;       // check form state
 
@@ -24,7 +25,7 @@
   async function load(quiet) {
     if (!quiet) root.innerHTML = `<div class="loading">Loading…</div>`;
     try {
-      F = await G.api("field", { site: localStorage.getItem(SITE_KEY) || "" });
+      F = await G.api("field", { site: localStorage.getItem(SITE_KEY) || "", camp: localStorage.getItem(CAMP_KEY) || "" });
       F.incidents = F.incidents || [];
       S.applySettings(F.settings);
       localStorage.setItem("abfm_grooming_user", JSON.stringify(F.user));
@@ -68,7 +69,11 @@
   // ---------------- data helpers ----------------
   const types = () => F.user.can.checkTypes;
   const mainType = () => (types().includes("site") ? "site" : types()[0]);
-  const site = () => F.sites.find((s) => s.id === F.site);
+  const site = () => F.sites.find((s) => s.id === F.site) || { name: "" };
+  /** Camp Boss works by camp; everyone else by site. */
+  const campMode = () => !!F.camps;
+  const place = () => (campMode() ? F.camp || "No camp" : site().name);
+  const siteOf = (empId) => { const e = F.staff.find((x) => x.id === empId); return e ? e.site_id : F.site; };
   const checksOn = (type, date = F.today) => {
     const m = new Map();
     F.checks.filter((c) => c.type === type && c.date === date).forEach((c) => m.set(c.employee_id, c));
@@ -111,6 +116,7 @@
     const row = (href, ico, tone, title, sub, end, disabled) => `<a href="${href}" class="task" ${disabled ? 'aria-disabled="true"' : ""}><div class="ico ${tone}">${G.icon(ico)}</div><div class="grow"><b>${title}</b><span>${sub}</span></div>${end}</a>`;
     const chev = `<span class="chev">${G.icon("chevron")}</span>`;
     const status = mt !== "site" ? "Check everyone before they leave the accommodation"
+      : T.siteChecklist === "0" ? "Site and random field checks on this site today"
       : sub ? `Sent to Head Office at ${esc(sub.time)}${sub.time > T.checklistDue ? " (late)" : ""}`
       : overdue ? `<b>Overdue: the checklist was due at ${esc(T.checklistDue)}</b>` : `Send to Head Office by ${esc(T.checklistDue)}`;
     return `
@@ -118,7 +124,9 @@
         <div class="logo-row"><img src="assets/logo.png" alt="Al Bonian FM"><a href="#/logout">${G.icon("logout")}Log out</a></div>
         <div class="hi">${greet}</div>
         <h1>${esc(F.user.name)}</h1>
-        <label class="site-select">${G.icon("pin")}<select id="site-pick" aria-label="Site">${F.sites.map((s) => `<option value="${s.id}" ${s.id === F.site ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label>
+        ${campMode()
+          ? `<label class="site-select">${G.icon("bed")}<select id="camp-pick" aria-label="Camp">${F.camps.map((c) => `<option value="${esc(c.name)}" ${c.name === F.camp ? "selected" : ""}>${esc(c.name)} · ${c.staff} staff</option>`).join("")}</select></label>`
+          : `<label class="site-select">${G.icon("pin")}<select id="site-pick" aria-label="Site">${F.sites.map((s) => `<option value="${s.id}" ${s.id === F.site ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select></label>`}
         <div class="progress">
           <div class="row between"><div class="big">${checked}<small> of ${staff.length} checked</small></div><div class="muted small">${fmtDay(F.today)}</div></div>
           <div class="track"><i class="${p === 100 ? "done" : ""}" style="width:${p}%"></i></div>
@@ -137,7 +145,7 @@
           ${row("#/incident", "megaphone", openInc ? "bad" : "", "Report an incident", openInc ? `${plural(openInc, "open incident")} at this site` : "Difficult customer, complaint, serious conduct", chev)}
           ${row("#/supply", "box", F.supply.length ? "warn" : "", "Supply gaps", F.supply.length ? `${plural(F.supply.length, "item")} waiting from Stores` : "Nothing waiting", chev)}
         </div>
-        ${can("site") ? (sub ? `<a href="#/submit" class="btn ghost block mt">${G.icon("check")}Sent at ${esc(sub.time)} · view</a>` : `<a href="#/submit" class="btn block mt ${left ? "ghost" : ""}">${left ? "Finish the checks, then send to Head Office" : "Send to Head Office"}</a>`) : ""}
+        ${can("site") && T.siteChecklist !== "0" ? (sub ? `<a href="#/submit" class="btn ghost block mt">${G.icon("check")}Sent at ${esc(sub.time)} · view</a>` : `<a href="#/submit" class="btn block mt ${left ? "ghost" : ""}">${left ? "Finish the checks, then send to Head Office" : "Send to Head Office"}</a>`) : ""}
         <p class="muted small mt" style="text-align:center"><a href="#/refresh" class="blue">${G.icon("refresh")} Refresh</a></p>
       </div>`;
   }
@@ -163,7 +171,7 @@
     return `
       <div class="m-top">
         <a href="#/" class="back">${G.icon("back")}Today</a>
-        <h1>${S.CHECK_TYPES[type].label} · ${esc(site().name)}</h1>
+        <h1>${S.CHECK_TYPES[type].label} · ${esc(place())}</h1>
         <div class="muted small">${S.CHECK_TYPES[type].who}</div>
         ${types().length > 1 ? `<div class="chips mt-s">${types().map((t) => `<a href="#/check/${t}" class="chip ${t === type ? "on" : ""}">${S.CHECK_TYPES[t].short}</a>`).join("")}</div>` : ""}
         <div class="search-wrap">${G.icon("search")}<input class="search" type="search" id="search" value="${esc(q.q || "")}" placeholder="Search name, staff number or trade" data-type="${type}" data-f="${f}"></div>
@@ -175,7 +183,7 @@
         ${shown.length === 0 ? `<p class="muted">${F.staff.length ? "No one matches." : "No staff on this site yet. Ask HR or the administrator to add them."}</p>` : `
         <div class="list emp-list">${shown.map((e) => `
           <a href="#/check/${type}/${e.id}" class="emp"><div class="avatar">${initials(e.name)}</div>
-            <div class="grow"><b>${esc(e.name)}</b><span>${esc(e.staff_no)} · ${esc(e.trade)}</span></div>${pill(checks.get(e.id))}</a>`).join("")}
+            <div class="grow"><b>${esc(e.name)}</b><span>${esc(e.staff_no)} · ${esc(e.trade)}${campMode() ? ` · ${esc((F.sites.find((x) => x.id === e.site_id) || {}).name || "")}` : ""}</span></div>${pill(checks.get(e.id))}</a>`).join("")}
         </div>`}
         ${type === "site" && counts.todo === 0 && F.staff.length ? `<a href="#/submit" class="btn navy block mt">Everyone checked: review and submit ›</a>` : ""}
       </div>`;
@@ -291,7 +299,7 @@
     const sub = F.submission;
     const withGaps = c.filter((x) => x.gaps.length).map((x) => ({ x, e: F.staff.find((e) => e.id === x.employee_id) })).filter((r) => r.e).sort((a, b) => a.e.name.localeCompare(b.e.name));
     return `
-      <div class="m-top"><a href="#/" class="back">${G.icon("back")}Today</a><h1>Submit daily checklist</h1><div class="muted small">${esc(site().name)} · ${fmtDay(F.today)}</div></div>
+      <div class="m-top"><a href="#/" class="back">${G.icon("back")}Today</a><h1>Submit daily checklist</h1><div class="muted small">${esc(place())} · ${fmtDay(F.today)}</div></div>
       <div class="m-body">
         ${q.sent ? `<div class="flash ok">Sent to Head Office. You can resend if you change any check today.</div>` : sub ? `<div class="flash ok">Sent at ${esc(sub.time)} by ${esc(sub.by)}.</div>` : ""}
         <div class="stats">
@@ -318,7 +326,7 @@
   function supplyPage() {
     const can = F.user.can.issueSupply;
     return `
-      <div class="m-top"><a href="#/" class="back">${G.icon("back")}Today</a><h1>Supply gaps · ${esc(site().name)}</h1>
+      <div class="m-top"><a href="#/" class="back">${G.icon("back")}Today</a><h1>Supply gaps · ${esc(place())}</h1>
         <div class="muted small">Items staff asked for but have not received. These are not counted against the staff member.</div></div>
       <div class="m-body">
         ${F.supply.length === 0 ? `<p class="muted mb">Nothing waiting from Stores.</p>` : `<div class="list mb">${F.supply.map((g) => {
@@ -390,7 +398,7 @@
     const type = S.INCIDENT_TYPES.find((t) => t.code === q.type) || S.INCIDENT_TYPES[0];
     return `
       <div class="m-top"><a href="#/" class="back">${G.icon("back")}Today</a><h1>Report an incident</h1>
-        <div class="muted small">${esc(site().name)} · the FM Manager is informed straight away.</div></div>
+        <div class="muted small">${esc(place())} · the FM Manager is informed straight away.</div></div>
       <div class="m-body">
         <form id="incident-form">
           <div class="card sec"><h4><span>What happened?</span></h4>
@@ -399,6 +407,7 @@
             <div class="hint mb" id="itype-hint">${esc(type.hint)}</div>
             <div class="flash err" id="itype-warn" ${type.code === "serious_conduct" ? "" : "hidden"}>Remove the person from site now. HR investigates and the OCO is informed.</div>
             <label class="field">Staff member involved (optional)<select name="employee_id"><option value="">– none –</option>${F.staff.map((e) => `<option value="${e.id}">${esc(e.name)} · ${esc(e.staff_no)}</option>`).join("")}</select></label>
+            ${campMode() ? `<label class="field">Site (if no staff member is picked)<select name="site_id"><option value="">–</option>${[...F.sites].sort((a, b) => a.name.localeCompare(b.name)).map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select></label>` : ""}
             <label class="field">Where (villa, flat, building)<input type="text" name="location" placeholder="e.g. Villa 21"></label>
             <label class="field">What happened<textarea name="details" required placeholder="Short and factual"></textarea></label>
             <label class="field">What was done<textarea name="action" placeholder="e.g. Stayed calm, called the supervisor"></textarea></label>
@@ -459,6 +468,7 @@
   root.addEventListener("change", async (ev) => {
     const t = ev.target;
     if (t.id === "site-pick") { localStorage.setItem(SITE_KEY, t.value); await load(); render(); }
+    if (t.id === "camp-pick") { localStorage.setItem(CAMP_KEY, t.value); await load(); render(); }
     if (t.dataset.req && CF) CF.items[t.dataset.req].requested = t.value;
     if (t.id === "photo" && t.files[0]) {
       try { CF.photo = await G.shrinkPhoto(t.files[0]); rerenderForm(); } catch (e) { G.toast(e.message, "err"); }
@@ -509,7 +519,7 @@
       const d = G.formData(f);
       G.busy(true);
       try {
-        const out = await G.api("addIncident", { site_id: F.site, ...d });
+        const out = await G.api("addIncident", { ...d, site_id: d.site_id || (d.employee_id ? siteOf(d.employee_id) : F.site) });
         F.incidents.push(out.incident);
         G.toast("Incident reported.");
         location.hash = "#/";

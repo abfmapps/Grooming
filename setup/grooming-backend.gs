@@ -26,7 +26,7 @@ const SESSION_DAYS = 14;
 const TABLES = {
   Sites: ["id", "name", "active"],
   Users: ["id", "username", "name", "role", "pin", "sites", "active", "email"],
-  Employees: ["id", "staff_no", "name", "trade", "site_id", "uniform_size", "shoe_size", "trained_on", "active", "baseline_on", "ppe_held", "missing"],
+  Employees: ["id", "staff_no", "name", "trade", "site_id", "uniform_size", "shoe_size", "trained_on", "active", "baseline_on", "ppe_held", "missing", "accommodation"],
   Checks: ["id", "date", "type", "employee_id", "site_id", "status", "finding_no", "gaps", "note", "photo", "by", "time"],
   Supply: ["id", "employee_id", "site_id", "item", "requested_on", "issued_on", "check_id", "by"],
   Submissions: ["site_id", "date", "by", "time", "total", "passed", "gaps", "supply", "absent"],
@@ -41,7 +41,7 @@ const TABLES = {
 /** Rules the dashboard can change (Sites & users → Rules). Values are kept in the Settings tab. */
 const SETTING_DEFAULTS = {
   auditPass: 85, findingCloseDays: 7, reportDays: 2, planDays: 3, reauditDays: 14, fieldChecksPerWeek: 3,
-  supplyWorkingDays: 5, warningWindowDays: 90, trainingDeadline: "2026-11-25", checklistDue: "18:00",
+  supplyWorkingDays: 5, warningWindowDays: 90, trainingDeadline: "2026-11-25", checklistDue: "18:00", siteChecklist: "1",
   deductRepeat: "", deductFurther: "", digestOn: "0", digestHour: 19, dashboardUrl: "",
 };
 const INCIDENT_TYPES = ["difficult_customer", "complaint", "serious_conduct", "damage", "other"];
@@ -50,12 +50,12 @@ const BASELINE_ITEMS = ["uniform", "id_card", "shoes", "gloves_fabric", "gloves_
 
 const ROLES = {
   supervisor: { field: true, manage: false, all: false },
-  camp_boss: { field: true, manage: false, all: false },
+  camp_boss: { field: true, manage: false, all: true },     // works by camp (accommodation), across all sites
   site_manager: { field: true, manage: false, all: false },
   fm_manager: { field: true, manage: true, all: false },
   director: { field: false, manage: true, all: true },
   oco: { field: false, manage: true, all: true },
-  hse: { field: false, manage: true, all: true },
+  hse: { field: true, manage: false, all: true },            // HSE officers check staff and PPE on any site, from the phone
   hr: { field: false, manage: true, all: true },
   stores: { field: false, manage: true, all: true },
   admin: { field: true, manage: true, all: true },
@@ -64,13 +64,13 @@ const CAN = {
   audit: (u) => ["oco", "hse", "director", "admin"].indexOf(u.role) >= 0,
   closeActions: (u) => ["oco", "hse", "director", "admin", "fm_manager", "hr"].indexOf(u.role) >= 0,
   issueSupply: (u) => ["stores", "hr", "admin", "director", "fm_manager", "supervisor", "site_manager"].indexOf(u.role) >= 0,
-  manageStaff: (u) => ["admin", "hr", "director"].indexOf(u.role) >= 0,
-  manageUsers: (u) => ["admin", "director"].indexOf(u.role) >= 0,
+  manageStaff: (u) => ["admin", "hr", "director", "oco"].indexOf(u.role) >= 0,
+  manageUsers: (u) => ["admin", "director", "oco"].indexOf(u.role) >= 0,
   markTraining: (u) => u.role !== "stores",
   discipline: (u) => ["hr", "director", "admin", "fm_manager"].indexOf(u.role) >= 0,
   incidents: (u) => ["fm_manager", "oco", "hse", "hr", "director", "admin"].indexOf(u.role) >= 0,
   activity: (u) => ["admin", "director", "oco", "hr"].indexOf(u.role) >= 0,
-  settings: (u) => ["admin", "director"].indexOf(u.role) >= 0,
+  settings: (u) => ["admin", "director", "oco"].indexOf(u.role) >= 0,
   checkTypes: (u) => (u.role === "camp_boss" ? ["camp"] : u.role === "admin" ? ["site", "camp", "field"] : ["site", "field"]),
 };
 
@@ -261,6 +261,29 @@ function login_(b) {
 }
 
 /* ---------------- reads ---------------- */
+/** Camp Boss view: staff are grouped by where they live (accommodation), not by site. */
+function campView_(u, b, out, today) {
+  const mine = {};
+  u.siteIds.forEach((s) => (mine[s] = true));
+  const live = rows_("Employees").filter((e) => e.active === "1" && mine[e.site_id]);
+  const counts = {};
+  live.forEach((e) => { const c = e.accommodation || ""; if (c && !/^out/i.test(c)) counts[c] = (counts[c] || 0) + 1; });
+  const camps = Object.keys(counts).sort((a, x) => counts[x] - counts[a]);
+  const camp = camps.indexOf(String(b.camp || "")) >= 0 ? String(b.camp) : camps[0] || "";
+  const staff = live.filter((e) => e.accommodation === camp);
+  const ids = {};
+  staff.forEach((e) => (ids[e.id] = true));
+  out.camps = camps.map((c) => ({ name: c, staff: counts[c] }));
+  out.camp = camp;
+  out.staff = staff.map(emp_);
+  out.checks = rows_("Checks").filter((c) => ids[c.employee_id] && c.date >= addDays_(today, -6)).map(check_);
+  out.findings = findings_(ids, addDays_(today, -settings_().warningWindowDays), today);
+  out.supply = rows_("Supply").filter((g) => ids[g.employee_id] && !g.issued_on).map(supply_);
+  out.submission = null;
+  out.incidents = rows_("Incidents").filter((x) => x.reported_by === u.name && (!x.closed_on || x.date >= addDays_(today, -6))).map(incident_);
+  return out;
+}
+
 const READS = {
   /** Everything the phone app needs for one site. */
   field: function (u, b) {
@@ -270,6 +293,7 @@ const READS = {
     const today = today_();
     const out = { user: u, sites: sites, today: today, site: siteId || null, settings: settings_() };
     if (!siteId) return out;
+    if (u.role === "camp_boss") return campView_(u, b, out, today);
     const staff = rows_("Employees").filter((e) => e.site_id === siteId && e.active === "1");
     const ids = {};
     staff.forEach((e) => (ids[e.id] = true));
@@ -337,7 +361,7 @@ const READS = {
 };
 
 function site_(s) { return { id: s.id, name: s.name, active: s.active === "1" }; }
-function emp_(e) { return { id: e.id, staff_no: e.staff_no, name: e.name, trade: e.trade, site_id: e.site_id, uniform_size: e.uniform_size, shoe_size: e.shoe_size, trained_on: e.trained_on || null, active: e.active === "1", baseline_on: e.baseline_on || null, ppe_held: String(e.ppe_held || "").split(",").filter(Boolean), missing: e.missing || "" }; }
+function emp_(e) { return { id: e.id, staff_no: e.staff_no, name: e.name, trade: e.trade, site_id: e.site_id, uniform_size: e.uniform_size, shoe_size: e.shoe_size, trained_on: e.trained_on || null, active: e.active === "1", baseline_on: e.baseline_on || null, ppe_held: String(e.ppe_held || "").split(",").filter(Boolean), missing: e.missing || "", accommodation: e.accommodation || "" }; }
 function incident_(x) { return { id: x.id, date: x.date, time: x.time, site_id: x.site_id, employee_id: x.employee_id || null, type: x.type, location: x.location, details: x.details, action: x.action, reported_by: x.reported_by, status: x.closed_on ? "closed" : x.ack_on ? "acknowledged" : "open", ack_by: x.ack_by, ack_on: x.ack_on || null, closed_on: x.closed_on || null, outcome: x.outcome }; }
 function discipline_(x) { return { id: x.id, employee_id: x.employee_id, site_id: x.site_id, date: x.date, level: x.level, action: x.action, amount: x.amount ? Number(x.amount) : null, notes: x.notes, by: x.by }; }
 function check_(c) { return { id: c.id, date: c.date, type: c.type, employee_id: c.employee_id, site_id: c.site_id, status: c.status, finding_no: c.finding_no ? Number(c.finding_no) : null, gaps: parseGaps_(c.gaps), note: c.note, photo: c.photo || null, by: c.by, time: c.time }; }
@@ -569,7 +593,7 @@ const WRITES = {
     if (!u.can.manageStaff) fail_("role");
     const rec = {
       staff_no: clip_(b.staff_no, 30), name: clip_(b.name, 80), trade: clip_(b.trade, 60), site_id: clip_(b.site_id, 20),
-      uniform_size: clip_(b.uniform_size, 10), shoe_size: clip_(b.shoe_size, 10),
+      uniform_size: clip_(b.uniform_size, 10), shoe_size: clip_(b.shoe_size, 10), accommodation: clip_(b.accommodation, 80),
     };
     if (!rec.staff_no || !rec.name) fail_("name");
     if (rows_("Employees").some((e) => e.staff_no.toLowerCase() === rec.staff_no.toLowerCase() && e.id !== String(b.id || ""))) fail_("exists");
@@ -599,6 +623,7 @@ const WRITES = {
       if (!site && c[3]) site = insert_("Sites", { id: id_(), name: c[3], active: "1" });
       const e = rows_("Employees").filter((x) => x.staff_no.toLowerCase() === c[0].toLowerCase())[0] || fresh.filter((x) => x.staff_no.toLowerCase() === c[0].toLowerCase())[0];
       const rec = { staff_no: c[0], name: c[1], trade: c[2] || "", uniform_size: c[4] || "", shoe_size: c[5] || "", active: "1" };
+      if (c[6]) rec.accommodation = c[6];
       if (site) rec.site_id = site.id;
       if (e && e._row) { Object.assign(e, rec); update_("Employees", e); updated++; }
       else if (e) { Object.assign(e, rec); updated++; }
@@ -621,7 +646,7 @@ const WRITES = {
       } else if (k === "trainingDeadline") { if (v && !isDate_(v)) fail_("setting"); }
       else if (k === "checklistDue") { if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(v))) fail_("setting"); }
       else if (k === "deductRepeat" || k === "deductFurther") { v = String(v).trim(); if (v && !(Number(v) >= 0)) fail_("setting"); }
-      else if (k === "digestOn") v = v === true || v === "1" ? "1" : "0";
+      else if (k === "digestOn" || k === "siteChecklist") v = v === true || v === "1" ? "1" : "0";
       else v = clip_(v, 300);
       const row = cur.filter((r) => r.key === k)[0];
       if (row) { row.value = String(v); update_("Settings", row); } else insert_("Settings", { key: k, value: String(v) });
@@ -787,7 +812,7 @@ function sendDigestTo_(user, force) {
   const staffBySite = {};
   rows_("Employees").forEach((e) => { if (e.active === "1" && mine[e.site_id]) staffBySite[e.site_id] = (staffBySite[e.site_id] || 0) + 1; });
   const subs = rows_("Submissions").filter((x) => x.date === today && mine[x.site_id]);
-  const notSent = sites.filter((s) => staffBySite[s.id] && !subs.some((x) => x.site_id === s.id)).map((s) => s.name);
+  const notSent = st.siteChecklist === "0" ? [] : sites.filter((s) => staffBySite[s.id] && !subs.some((x) => x.site_id === s.id)).map((s) => s.name);
   const late = subs.filter((x) => x.time > st.checklistDue).map((x) => siteName(x.site_id) + " (" + x.time + ")");
   const audits = rows_("Audits").filter((a) => mine[a.site_id]);
   const auditById = {};
@@ -883,7 +908,8 @@ function loadDemoData() {
       used[name] = true;
       const careless = rnd() < 0.12;
       emps.push({ id: id_(), staff_no: "ABFM-" + no++, name: name, trade: pick(TRADES), site_id: siteId[s[0]], uniform_size: pick(["S", "M", "M", "L", "L", "XL", "XXL"]), shoe_size: String(39 + Math.floor(rnd() * 6)), trained_on: rnd() < (s[2] > 0.95 ? 0.95 : 0.7) ? addDays_(today, -1 - Math.floor(rnd() * 25)) : "", active: "1",
-        baseline_on: rnd() < 0.85 ? addDays_(today, -20 - Math.floor(rnd() * 8)) : "", ppe_held: "", missing: "", _site: s[0], _care: careless ? s[2] - 0.12 : s[2] + (1 - s[2]) * 0.5 });
+        baseline_on: rnd() < 0.85 ? addDays_(today, -20 - Math.floor(rnd() * 8)) : "", ppe_held: "", missing: "",
+        accommodation: pick(["Al Quoz Camp", "Al Quoz Camp", "Al Quoz Camp", "Jafza Camp", "Outleaving"]), _site: s[0], _care: careless ? s[2] - 0.12 : s[2] + (1 - s[2]) * 0.5 });
     }
   });
   const checks = [], supply = [], subs = [], findDates = {}, openGap = {};

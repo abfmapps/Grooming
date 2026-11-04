@@ -86,8 +86,8 @@
   const head = (eyebrow, title, sub, right = "") => `<div class="head"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1>${sub ? `<div class="muted small mt-s">${sub}</div>` : ""}</div>${right ? `<div class="filters no-print">${right}</div>` : ""}</div>`;
   const empty = (t) => `<p class="muted" style="padding:8px 0">${t}</p>`;
   const auditScore = (t) => `<span class="nw"><span class="score" ${t < T.auditPass ? 'style="color:var(--red)"' : ""}>${t}</span> <span class="pill ${t >= T.auditPass ? "green" : "red"}">${t >= T.auditPass ? "Pass" : "Fail"}</span></span>`;
-  const stripClass = (d) => (d.pct === null ? (d.sent ? "c-g" : "c-x") : !d.sent ? "c-x" : d.pct >= 100 ? "c-g" : d.pct >= 90 ? "c-g2" : d.pct >= 80 ? "c-a" : "c-r");
-  const legend = `<span class="legend"><span><i class="c-g"></i>100%</span><span><i class="c-g2"></i>90–99%</span><span><i class="c-a"></i>80–89%</span><span><i class="c-r"></i>&lt;80%</span><span><i class="c-x"></i>Not sent</span></span>`;
+  const stripClass = (d) => (d.pct === null ? (d.sent && G.siteChecklist() ? "c-g" : "c-x") : !d.sent && G.siteChecklist() ? "c-x" : d.pct >= 100 ? "c-g" : d.pct >= 90 ? "c-g2" : d.pct >= 80 ? "c-a" : "c-r");
+  const legend = () => `<span class="legend"><span><i class="c-g"></i>100%</span><span><i class="c-g2"></i>90–99%</span><span><i class="c-a"></i>80–89%</span><span><i class="c-r"></i>&lt;80%</span><span><i class="c-x"></i>${G.siteChecklist() ? "Not sent" : "No checks"}</span></span>`;
   const statusPill = (c) => ({ pass: `<span class="pill green">Pass</span>`, gaps: `<span class="pill red">${plural(c.gaps.filter((g) => !g.supply).length, "gap")}</span>`, supply: `<span class="pill blue">Supply gap</span>`, absent: `<span class="pill amber">Absent</span>`, leave: `<span class="pill grey">On leave</span>` }[c.status]);
   const opts = (list, sel, blank) => (blank ? `<option value="">${blank}</option>` : "") + list.map((x) => `<option value="${x.id}" ${x.id === sel ? "selected" : ""}>${esc(x.name)}</option>`).join("");
   const staffOf = (siteId) => D.employees.filter((e) => e.active && e.site_id === siteId).sort((a, b) => a.name.localeCompare(b.name));
@@ -99,7 +99,8 @@
     return `
       ${head(fmtDay(D.today), D.user.role === "fm_manager" ? "Overview, my sites" : "Overview, all sites", "", `<a class="btn small ghost" href="#" data-refresh>${G.icon("refresh")}Refresh</a><a class="btn small ghost" href="#/analytics">Analytics</a><a class="btn small navy" href="#/reports">Reports</a>`)}
       <div class="kpis six">
-        <a href="#/checklists" class="card kpi"><div class="l">Checklists today</div><div class="v">${kpi.sentToday}<small> / ${kpi.sites}</small></div><div class="s ${kpi.sentToday < kpi.sites ? "red" : "green"}">${kpi.sites - kpi.sentToday ? `${kpi.sites - kpi.sentToday} site(s) not sent yet` : "All sites sent"}${kpi.lateToday ? ` · ${kpi.lateToday} late` : ""}</div></a>
+        ${!G.siteChecklist() ? `<a href="#/checklists" class="card kpi"><div class="l">Staff checked today</div><div class="v">${kpi.checkedToday}<small> / ${kpi.staffTotal}</small></div><div class="s muted">Camp, site and field checks</div></a>` : ""}
+        <a href="#/checklists" class="card kpi" ${G.siteChecklist() ? "" : "hidden"}><div class="l">Checklists today</div><div class="v">${kpi.sentToday}<small> / ${kpi.sites}</small></div><div class="s ${kpi.sentToday < kpi.sites ? "red" : "green"}">${kpi.sites - kpi.sentToday ? `${kpi.sites - kpi.sentToday} site(s) not sent yet` : "All sites sent"}${kpi.lateToday ? ` · ${kpi.lateToday} late` : ""}</div></a>
         <div class="card kpi"><div class="l">Pass rate, 14 days</div><div class="v">${pct(kpi.compliance, 1)}</div><div class="s ${delta == null || Math.abs(delta) < 0.05 ? "muted" : delta > 0 ? "green" : "red"}">${delta == null ? "Supply gaps count as pass" : Math.abs(delta) < 0.05 ? "Same as the 14 days before" : `${delta > 0 ? "Up" : "Down"} ${Math.abs(delta).toFixed(1)} pts on the 14 days before`}</div></div>
         <a href="#/findings" class="card kpi"><div class="l">Open audit findings</div><div class="v">${kpi.open}</div><div class="s ${kpi.overdue ? "red" : "muted"}">${kpi.overdue ? `${kpi.overdue} past the ${T.findingCloseDays}-day limit` : `Close within ${T.findingCloseDays} days`}</div></a>
         <div class="card kpi"><div class="l">Average audit score</div><div class="v">${kpi.avgAudit == null ? "–" : Math.round(kpi.avgAudit)}<small> / 100</small></div><div class="s muted">Pass mark ${T.auditPass} · ${plural(kpi.below, "site")} below</div></div>
@@ -107,14 +108,14 @@
         <a href="#/hr" class="card kpi"><div class="l">HR steps due</div><div class="v">${kpi.hrPending}</div><div class="s ${kpi.hrPending ? "red" : "muted"}">${kpi.hrPending ? "Not recorded yet" : "All recorded"}</div></a>
       </div>
       <div class="grid2">
-        <div class="card pad panel"><h3><span>Sites</span>${legend}</h3>
+        <div class="card pad panel"><h3><span>Sites</span>${legend()}</h3>
           ${rows.length === 0 ? empty(`No sites yet. Add them under <a class="blue" href="#/settings">Sites & users</a>.`) : `<div class="table-wrap"><table class="t">
-            <thead><tr><th>Site</th><th>FM Manager</th><th>Today</th><th>Daily compliance, last 14 days</th><th>Last audit</th><th>Open</th></tr></thead><tbody>
+            <thead><tr><th>Site</th><th>FM Manager</th><th>${G.siteChecklist() ? "Today" : "Checked today"}</th><th>Daily compliance, last 14 days</th><th>Last audit</th><th>Open</th></tr></thead><tbody>
             ${rows.map((r) => `<tr>
               <td class="nw"><a href="#/sites/${r.site.id}"><b>${esc(r.site.name)}</b></a><br><span class="muted small">${r.staff} staff</span></td>
               <td class="nw">${esc(r.manager) || `<span class="muted">–</span>`}</td>
-              <td><a href="#/checklists/${r.site.id}/${D.today}">${r.todayAt ? (r.todayAt > T.checklistDue ? `<span class="pill amber">${esc(r.todayAt)} late</span>` : `<span class="pill green">${esc(r.todayAt)}</span>`) : `<span class="pill ${G.nowHM() > T.checklistDue ? "red" : "grey"}">Not sent</span>`}</a></td>
-              <td><div class="strip">${r.strip.map((d) => `<i class="${stripClass(d)}" title="${fmtDate(d.date)}: ${d.sent ? (d.pct == null ? "sent" : d.pct + "%") : "not sent"}"></i>`).join("")}</div></td>
+              <td><a href="#/checklists/${r.site.id}/${D.today}">${!G.siteChecklist() ? (r.checkedToday ? `<span class="pill green">${r.checkedToday} of ${r.staff}</span>` : `<span class="pill grey">None yet</span>`) : r.todayAt ? (r.todayAt > T.checklistDue ? `<span class="pill amber">${esc(r.todayAt)} late</span>` : `<span class="pill green">${esc(r.todayAt)}</span>`) : `<span class="pill ${G.nowHM() > T.checklistDue ? "red" : "grey"}">Not sent</span>`}</a></td>
+              <td><div class="strip">${r.strip.map((d) => `<i class="${stripClass(d)}" title="${fmtDate(d.date)}: ${d.pct == null ? (G.siteChecklist() && d.sent ? "sent" : "no checks") : d.pct + "% passed"}${G.siteChecklist() && !d.sent ? ", not sent" : ""}"></i>`).join("")}</div></td>
               <td>${r.lastAudit ? `<a href="#/audits/${r.lastAudit.id}">${auditScore(r.lastAudit.total)}</a>` : `<span class="muted">None yet</span>`}</td>
               <td class="nw">${r.open}${r.overdue ? `<span class="red small"> · ${r.overdue} late</span>` : ""}</td></tr>`).join("")}
             </tbody></table></div>`}
@@ -389,7 +390,7 @@
         <details class="card pad panel"><summary class="linkbtn" style="cursor:pointer">+ Add an employee</summary>${employeeForm({})}</details>
         <details class="card pad panel"><summary class="linkbtn" style="cursor:pointer">${G.icon("upload")}Import from Excel / CSV</summary>
           <form id="import-form" class="mt">
-            <p class="small muted mb">Columns, in this order: <b>staff number, name, trade, site, uniform size, shoe size</b>. Copy the rows from Excel and paste them here, or choose a CSV file. Existing staff numbers are updated; new site names are created.</p>
+            <p class="small muted mb">Columns, in this order: <b>staff number, name, trade, site, uniform size, shoe size, accommodation</b>. Copy the rows from Excel and paste them here, or choose a CSV file. Existing staff numbers are updated; new site names are created.</p>
             <label class="field">CSV file<input type="file" name="file" accept=".csv,.txt"></label>
             <label class="field">…or paste rows<textarea name="csv" placeholder="ABFM-1001, Rajesh Kumar, Cleaner, Al Reem Villas, L, 42"></textarea></label>
             <button class="btn small" type="submit">Import</button>
@@ -403,6 +404,7 @@
       <label class="field">Site<select name="site_id">${opts(D.mySites, e.site_id, "–")}</select></label>
       <label class="field">Uniform size<input type="text" name="uniform_size" value="${esc(e.uniform_size || "")}"></label>
       <label class="field">Shoe size<input type="text" name="shoe_size" value="${esc(e.shoe_size || "")}"></label>
+      <label class="field">Accommodation (camp)<input type="text" name="accommodation" value="${esc(e.accommodation || "")}" placeholder="e.g. Al Quoz Camp" list="camp-list"><datalist id="camp-list">${[...new Set(D.employees.map((x) => x.accommodation).filter(Boolean))].sort().map((c) => `<option value="${esc(c)}">`).join("")}</datalist></label>
       ${e.id ? `<label class="field" style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="active" ${e.active ? "checked" : ""}> Active</label>` : ""}
       <div><button class="btn small" type="submit">${e.id ? "Save" : "Add employee"}</button></div></form>`;
   }
@@ -447,7 +449,7 @@
     return `
       <div class="head"><div class="row" style="gap:16px"><div class="avatar" style="width:60px;height:60px;font-size:20px">${initials(e.name)}</div>
         <div><div class="eyebrow"><a href="#/employees">Employees</a> › ${esc(e.staff_no)}</div><h1>${esc(e.name)}${e.active ? "" : ` <span class="pill grey">Inactive</span>`}</h1>
-          <div class="muted small" style="margin-top:2px">${[e.trade, e.site_id && siteName(e.site_id), fm && `FM Manager ${fm.name}`, e.uniform_size && `Uniform ${e.uniform_size}`, e.shoe_size && `Shoes ${e.shoe_size}`, e.trained_on ? `Training ✓ ${fmtDate(e.trained_on)}` : "Not trained yet"].filter(Boolean).map(esc).join(" · ")}</div></div></div></div>
+          <div class="muted small" style="margin-top:2px">${[e.trade, e.site_id && siteName(e.site_id), e.accommodation, fm && `FM Manager ${fm.name}`, e.uniform_size && `Uniform ${e.uniform_size}`, e.shoe_size && `Shoes ${e.shoe_size}`, e.trained_on ? `Training ✓ ${fmtDate(e.trained_on)}` : "Not trained yet"].filter(Boolean).map(esc).join(" · ")}</div></div></div></div>
       <div class="card pad panel mb"><h3><span>Warning level</span><span class="muted small">${plural(n, "finding")} in the last ${T.warningWindowDays} days · supply gaps are never counted</span></h3>
         <div class="ladder">
           <div class="rung ${rung(1)}"><div class="e">1st finding${n >= 1 ? " ✓" : ""}</div><b>Verbal warning</b>${n >= 1 ? fmtDate(finds[n - 1]) : "Correct on the spot · FM Manager or supervisor"}</div>
@@ -853,7 +855,7 @@
 
   // ---------------- settings ----------------
   function settingsPage() {
-    if (!D.user.can.manageUsers) return head("Setup", "Settings") + empty("Only the Administrator or the Director of Operations can manage sites, users and rules.") + pinForm();
+    if (!D.user.can.manageUsers) return head("Setup", "Settings") + empty("Only the Administrator, the Director of Operations or the OCO can manage sites, users and rules.") + pinForm();
     const edit = D.users.find((x) => x.id === R.q.edit);
     const sites = [...D.sites].sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
     return `
@@ -861,7 +863,7 @@
       <div class="tabs"><a href="#/settings" class="${R.q.tab === "rules" ? "" : "on"}">Sites & users</a>${D.user.can.settings ? `<a href="#/settings?tab=rules" class="${R.q.tab === "rules" ? "on" : ""}">Rules & daily email</a>` : ""}</div>
       ${R.q.tab === "rules" && D.user.can.settings ? rulesForm() : `<div class="grid-half">
         <div class="card pad panel"><h3>Users</h3><div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Role</th><th>Sites</th><th></th></tr></thead><tbody>
-          ${D.users.sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name)).map((x) => { const all = ["director", "oco", "hse", "hr", "stores", "admin"].includes(x.role); return `<tr ${x.active ? "" : 'style="opacity:.5"'}>
+          ${D.users.sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name)).map((x) => { const all = ["director", "oco", "hse", "hr", "stores", "admin", "camp_boss"].includes(x.role); return `<tr ${x.active ? "" : 'style="opacity:.5"'}>
             <td><b>${esc(x.name)}</b><br><span class="muted small">${esc(x.username)}${x.email ? ` · ${esc(x.email)}` : ""}</span></td><td class="small">${esc(S.roleLabel(x.role))}</td>
             <td class="small">${all ? `<span class="muted">All sites</span>` : x.sites.map(siteName).map(esc).join(", ") || `<span class="red">None</span>`}</td>
             <td class="nw"><a class="linkbtn" href="#/settings?edit=${x.id}">Edit</a> · <button class="linkbtn" data-user-active="${x.id}" data-v="${x.active ? "" : "1"}">${x.active ? "Deactivate" : "Activate"}</button></td></tr>`; }).join("")}
@@ -909,6 +911,7 @@
             ${num("supplyWorkingDays", "Stores supply target (working days)")}
             ${num("warningWindowDays", "Count repeat findings over (days)")}
             <label class="field">Daily checklist due by<input type="time" name="checklistDue" value="${esc(T.checklistDue)}" required></label>
+            <label class="field">Sites send a daily checklist<select name="siteChecklist"><option value="1" ${T.siteChecklist !== "0" ? "selected" : ""}>Yes: supervisors check every staff member on site daily</option><option value="0" ${T.siteChecklist === "0" ? "selected" : ""}>No: checks come from the Camp Boss and HSE only</option></select></label>
             <label class="field">Training deadline<input type="date" name="trainingDeadline" value="${esc(T.trainingDeadline)}"></label>
           </div>
           <h3 class="mt">Salary deductions (HR to confirm under labour law)</h3>

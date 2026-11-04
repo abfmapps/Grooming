@@ -43,6 +43,7 @@ export function loadBackend({ dataFile, photoDir }) {
   const ss = {
     getSheetByName: (n) => (store.sheets[n] ? new Sheet(n) : null),
     insertSheet: (n) => { store.sheets[n] = []; return new Sheet(n); },
+    deleteSheet: (sh) => { delete store.sheets[sh.name]; },
   };
   const cacheMap = new Map();
   const tz = (d, z, f) => {
