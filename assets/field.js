@@ -12,7 +12,11 @@
   async function start() {
     const u = G.session();
     if (!u) return G.loginView(root, { title: "Daily checklist for supervisors and managers. Log in with your username and PIN.", after: afterLogin });
-    if (!u.field) return dashboardOnly(u);
+    if (!u.field) {
+      // The saved login may be older than a role change: ask the server once before showing the choice screen.
+      try { const me = (await G.api("field", {})).user; if (me && me.field) localStorage.setItem("abfm_grooming_user", JSON.stringify(me)); else return dashboardOnly(u); }
+      catch (e) { return dashboardOnly(u); }
+    }
     await load();
     window.addEventListener("hashchange", render);
     render();

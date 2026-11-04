@@ -570,7 +570,7 @@
   }
 
   window.G = {
-    version: "11", api, session, login, logout, esc, nowHM, ordinal, icon, siteChecklist, installButton, initials, addDays, daysBetween, workingDaysBetween, todayLocal, fmtDate, fmtDay, pct, plural,
+    version: "12", api, session, login, logout, esc, nowHM, ordinal, icon, siteChecklist, installButton, initials, addDays, daysBetween, workingDaysBetween, todayLocal, fmtDate, fmtDay, pct, plural,
     toast, busy, formData, shrinkPhoto, loginView,
     findingsFor, index, siteAudits, openActions, supplyAge, fieldLast7, overview, controlEvidence, monthlyReport, periodReport,
     mondayOf, weekly, missedStandards, byTrade, punctuality, coverage, checkerActivity, hrPending, lineChart, barList, tableView, downloadCsv,

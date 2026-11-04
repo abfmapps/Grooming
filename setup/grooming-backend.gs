@@ -54,7 +54,7 @@ const ROLES = {
   site_manager: { field: true, manage: false, all: false },
   fm_manager: { field: true, manage: true, all: false },
   director: { field: false, manage: true, all: true },
-  oco: { field: false, manage: true, all: true },
+  oco: { field: true, manage: true, all: true },            // dashboard, plus site and field checks from the phone
   hse: { field: true, manage: false, all: true },            // HSE officers check staff and PPE on any site, from the phone
   hr: { field: false, manage: true, all: true },
   stores: { field: false, manage: true, all: true },
