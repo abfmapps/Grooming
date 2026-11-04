@@ -67,9 +67,19 @@
     };
     let body;
     try { body = (PAGES[page] || overviewPage)(); } catch (e) { console.error(e); body = `<div class="flash err">Could not show this page: ${esc(e.message)}</div>`; }
+    const current = nav().flatMap(([, items]) => items).find(([p]) => p === page);
+    document.body.classList.remove("nav-open");
     root.innerHTML = `
+      <header class="mbar">
+        <button class="mbar-btn" data-menu aria-label="Open menu">${G.icon("menu")}</button>
+        <img src="assets/logo.png" alt="Al Bonian FM">
+        <b>${esc(current ? current[1] : "Grooming Control")}</b>
+        ${counts.incidents + counts.hr ? `<span class="mbar-dot" aria-label="Items need attention"></span>` : ""}
+        ${G.installButton("compact")}
+      </header>
+      <div class="scrim" data-menu></div>
       <div class="shell">
-        <aside class="side">
+        <aside class="side" aria-label="Menu">
           <div class="brand"><img src="assets/logo.png" alt="Al Bonian FM" class="brand-logo"><b>Grooming<br>Control</b></div>
           <nav class="nav">${nav().map(([g, items]) => `<div class="nav-group">${g}</div>${items.map(([p, l, ic]) => `<a href="#/${p}" class="${page === p ? "on" : ""}">${G.icon(ic)}${l}${counts[p] ? `<span class="cnt ${["incidents", "hr"].includes(p) ? "hot" : ""}">${counts[p]}</span>` : ""}</a>`).join("")}`).join("")}</nav>
           <div class="user"><div class="avatar">${initials(D.user.name)}</div><div><b>${esc(D.user.name)}</b>${esc(S.roleLabel(D.user.role))}
@@ -89,7 +99,7 @@
   const empty = (t) => `<p class="muted" style="padding:8px 0">${t}</p>`;
   const auditScore = (t) => `<span class="nw"><span class="score" ${t < T.auditPass ? 'style="color:var(--red)"' : ""}>${t}</span> <span class="pill ${t >= T.auditPass ? "green" : "red"}">${t >= T.auditPass ? "Pass" : "Fail"}</span></span>`;
   const stripClass = (d) => (d.pct === null ? (d.sent && G.siteChecklist() ? "c-g" : "c-x") : !d.sent && G.siteChecklist() ? "c-x" : d.pct >= 100 ? "c-g" : d.pct >= 90 ? "c-g2" : d.pct >= 80 ? "c-a" : "c-r");
-  const legend = () => `<span class="legend"><span><i class="c-g"></i>100%</span><span><i class="c-g2"></i>90–99%</span><span><i class="c-a"></i>80–89%</span><span><i class="c-r"></i>&lt;80%</span><span><i class="c-x"></i>${G.siteChecklist() ? "Not sent" : "No checks"}</span></span>`;
+  const legend = () => `<span class="legend hide-m"><span><i class="c-g"></i>100%</span><span><i class="c-g2"></i>90–99%</span><span><i class="c-a"></i>80–89%</span><span><i class="c-r"></i>&lt;80%</span><span><i class="c-x"></i>${G.siteChecklist() ? "Not sent" : "No checks"}</span></span>`;
   const statusPill = (c) => ({ pass: `<span class="pill green">Pass</span>`, gaps: `<span class="pill red">${plural(c.gaps.filter((g) => !g.supply).length, "gap")}</span>`, supply: `<span class="pill blue">Supply gap</span>`, absent: `<span class="pill amber">Absent</span>`, leave: `<span class="pill grey">On leave</span>` }[c.status]);
   const opts = (list, sel, blank) => (blank ? `<option value="">${blank}</option>` : "") + list.map((x) => `<option value="${x.id}" ${x.id === sel ? "selected" : ""}>${esc(x.name)}</option>`).join("");
   const staffOf = (siteId) => D.employees.filter((e) => e.active && e.site_id === siteId).sort((a, b) => a.name.localeCompare(b.name));
@@ -112,14 +122,14 @@
       <div class="grid2">
         <div class="card pad panel"><h3><span>Sites</span>${legend()}</h3>
           ${rows.length === 0 ? empty(`No sites yet. Add them under <a class="blue" href="#/settings">Sites & users</a>.`) : `<div class="table-wrap"><table class="t">
-            <thead><tr><th>Site</th><th>FM Manager</th><th>${G.siteChecklist() ? "Today" : "Checked today"}</th><th>Daily compliance, last 14 days</th><th>Last audit</th><th>Open</th></tr></thead><tbody>
+            <thead><tr><th>Site</th><th class="hide-m">FM Manager</th><th>${G.siteChecklist() ? "Today" : "Checked today"}</th><th class="hide-m">Daily compliance, last 14 days</th><th>Last audit</th><th class="hide-m">Open</th></tr></thead><tbody>
             ${rows.map((r) => `<tr>
               <td class="nw"><a href="#/sites/${r.site.id}"><b>${esc(r.site.name)}</b></a><br><span class="muted small">${r.staff} staff</span></td>
-              <td class="nw">${esc(r.manager) || `<span class="muted">–</span>`}</td>
+              <td class="nw hide-m">${esc(r.manager) || `<span class="muted">–</span>`}</td>
               <td><a href="#/checklists/${r.site.id}/${D.today}">${!G.siteChecklist() ? (r.checkedToday ? `<span class="pill green">${r.checkedToday} of ${r.staff}</span>` : `<span class="pill grey">None yet</span>`) : r.todayAt ? (r.todayAt > T.checklistDue ? `<span class="pill amber">${esc(r.todayAt)} late</span>` : `<span class="pill green">${esc(r.todayAt)}</span>`) : `<span class="pill ${G.nowHM() > T.checklistDue ? "red" : "grey"}">Not sent</span>`}</a></td>
-              <td><div class="strip">${r.strip.map((d) => `<i class="${stripClass(d)}" title="${fmtDate(d.date)}: ${d.pct == null ? (G.siteChecklist() && d.sent ? "sent" : "no checks") : d.pct + "% passed"}${G.siteChecklist() && !d.sent ? ", not sent" : ""}"></i>`).join("")}</div></td>
-              <td>${r.lastAudit ? `<a href="#/audits/${r.lastAudit.id}">${auditScore(r.lastAudit.total)}</a>` : `<span class="muted">None yet</span>`}</td>
-              <td class="nw">${r.open}${r.overdue ? `<span class="red small"> · ${r.overdue} late</span>` : ""}</td></tr>`).join("")}
+              <td class="hide-m"><div class="strip">${r.strip.map((d) => `<i class="${stripClass(d)}" title="${fmtDate(d.date)}: ${d.pct == null ? (G.siteChecklist() && d.sent ? "sent" : "no checks") : d.pct + "% passed"}${G.siteChecklist() && !d.sent ? ", not sent" : ""}"></i>`).join("")}</div></td>
+              <td class="nw">${r.lastAudit ? `<a href="#/audits/${r.lastAudit.id}">${auditScore(r.lastAudit.total)}</a>` : `<span class="muted">None yet</span>`}</td>
+              <td class="nw hide-m">${r.open}${r.overdue ? `<span class="red small"> · ${r.overdue} late</span>` : ""}</td></tr>`).join("")}
             </tbody></table></div>`}
         </div>
         <div class="card pad panel"><h3>Needs attention</h3>
@@ -378,15 +388,15 @@
           <select name="filter"><option value="">Active</option><option value="repeat" ${filter === "repeat" ? "selected" : ""}>Repeat findings (2+)</option><option value="inactive" ${filter === "inactive" ? "selected" : ""}>Inactive</option></select>
           <button class="btn small navy" type="submit">Filter</button></form>`)}
       <div class="card pad mb"><div class="table-wrap"><table class="t">
-        <thead><tr><th>Employee</th><th>Trade</th><th>Site</th><th>Sizes</th><th>Findings (90d)</th><th>Next step</th><th>Trained</th><th>Supply</th><th>Last check</th></tr></thead><tbody>
+        <thead><tr><th>Employee</th><th class="hide-m">Trade</th><th class="hide-m">Site</th><th class="hide-m">Sizes</th><th>Findings (90d)</th><th class="hide-m">Next step</th><th>Trained</th><th class="hide-m">Supply</th><th class="hide-m">Last check</th></tr></thead><tbody>
         ${list.slice(0, 1000).map(({ e, n, gaps, last }) => `<tr class="click">
           <td><a href="#/employees/${e.id}" class="row"><span class="avatar" style="width:30px;height:30px;font-size:11px">${initials(e.name)}</span><span><b>${esc(e.name)}</b><br><span class="muted small">${esc(e.staff_no)}</span></span></a></td>
-          <td>${esc(e.trade)}</td><td>${e.site_id ? esc(siteName(e.site_id)) : `<span class="muted">–</span>`}</td>
-          <td class="small nw">${e.uniform_size ? `Uniform ${esc(e.uniform_size)}` : ""}${e.shoe_size ? ` · Shoes ${esc(e.shoe_size)}` : ""}</td>
+          <td class="hide-m">${esc(e.trade)}</td><td class="hide-m">${e.site_id ? esc(siteName(e.site_id)) : `<span class="muted">–</span>`}</td>
+          <td class="small nw hide-m">${e.uniform_size ? `Uniform ${esc(e.uniform_size)}` : ""}${e.shoe_size ? ` · Shoes ${esc(e.shoe_size)}` : ""}</td>
           <td>${n ? `<span class="pill ${n >= 3 ? "red" : n === 2 ? "amber" : "grey"}">${n}</span>` : `<span class="muted">0</span>`}</td>
-          <td class="small">${n ? S.warningFor(n + 1).action.split(";")[0].split("(")[0] : ""}</td>
+          <td class="small hide-m">${n ? S.warningFor(n + 1).action.split(";")[0].split("(")[0] : ""}</td>
           <td>${e.trained_on ? `<span class="pill green">${fmtDate(e.trained_on)}</span>` : `<span class="pill grey">No</span>`}</td>
-          <td>${gaps ? `<span class="pill blue">${gaps} waiting</span>` : ""}</td><td class="small nw">${fmtDate(last)}</td></tr>`).join("")}
+          <td class="hide-m">${gaps ? `<span class="pill blue">${gaps} waiting</span>` : ""}</td><td class="small nw hide-m">${fmtDate(last)}</td></tr>`).join("")}
       </tbody></table></div></div>
       ${D.user.can.manageStaff ? `<div class="grid-half">
         <details class="card pad panel"><summary class="linkbtn" style="cursor:pointer">+ Add an employee</summary>${employeeForm({})}</details>
@@ -960,6 +970,7 @@
     const b = ev.target.closest("button, a");
     if (!b) return;
     const d = b.dataset;
+    if (d.menu !== undefined) { document.body.classList.toggle("nav-open"); return; }
     if (d.logout !== undefined) { ev.preventDefault(); G.logout(); }
     else if (d.refresh !== undefined) { ev.preventDefault(); await reload(); G.toast("Up to date."); }
     else if (d.print !== undefined) window.print();

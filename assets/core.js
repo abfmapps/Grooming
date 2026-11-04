@@ -81,6 +81,7 @@
     x: '<path d="M6 6l12 12M18 6 6 18"/>',
     chevron: '<path d="m9 6 6 6-6 6"/>',
     back: '<path d="m15 6-6 6 6 6"/>',
+    menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     printer: '<path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/>',
   };
@@ -162,6 +163,7 @@
           <label class="field">Username<input type="text" name="username" autocomplete="username" autocapitalize="none" required></label>
           <label class="field">PIN<input type="password" name="pin" inputmode="numeric" autocomplete="current-password" required></label>
           <button class="btn block" type="submit">Log in</button>
+          <div style="text-align:center;margin-top:14px">${installButton()}</div>
         </form>
       </main>`;
     root.querySelector("#login-form").addEventListener("submit", async (e) => {
@@ -525,11 +527,29 @@
     a.remove();
   }
 
+  // ---------------- install as an app ----------------
+  let deferredInstall = null;
+  const standalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredInstall = e; document.querySelectorAll("[data-install]").forEach((b) => (b.hidden = false)); });
+  window.addEventListener("appinstalled", () => { deferredInstall = null; document.querySelectorAll("[data-install]").forEach((b) => (b.hidden = true)); });
+  /** An "Install app" button: shown on Android/desktop Chrome when installable, and on iPhone with instructions. */
+  function installButton(cls = "") {
+    if (standalone()) return "";
+    return `<button type="button" class="install-btn ${cls}" data-install ${deferredInstall || isIOS ? "" : "hidden"}>${icon("download")}Install app</button>`;
+  }
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest && e.target.closest("[data-install]");
+    if (!b) return;
+    if (deferredInstall) { deferredInstall.prompt(); await deferredInstall.userChoice.catch(() => {}); deferredInstall = null; b.hidden = true; return; }
+    toast(isIOS ? "In Safari, tap the Share button, then “Add to Home Screen”." : "Open the browser menu (⋮) and choose “Install app” or “Add to Home screen”.");
+  });
+
   // Register the service worker (installs the app and keeps it fast).
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 
   window.G = {
-    api, session, login, logout, esc, nowHM, ordinal, icon, siteChecklist, initials, addDays, daysBetween, workingDaysBetween, todayLocal, fmtDate, fmtDay, pct, plural,
+    api, session, login, logout, esc, nowHM, ordinal, icon, siteChecklist, installButton, initials, addDays, daysBetween, workingDaysBetween, todayLocal, fmtDate, fmtDay, pct, plural,
     toast, busy, formData, shrinkPhoto, loginView,
     findingsFor, index, siteAudits, openActions, supplyAge, fieldLast7, overview, controlEvidence, monthlyReport, periodReport,
     mondayOf, weekly, missedStandards, byTrade, punctuality, checkerActivity, hrPending, lineChart, barList, tableView, downloadCsv,

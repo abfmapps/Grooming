@@ -1,7 +1,7 @@
 /* Offline shell and install-as-app support. Bump VERSION when you change files in assets/ so phones pick up the update. */
-const VERSION = "abfm-grooming-v5";
+const VERSION = "abfm-grooming-v6";
 const SHELL = [
-  "./", "index.html", "admin.html", "config.js", "manifest.webmanifest",
+  "./", "index.html", "admin.html", "config.js", "manifest.webmanifest", "manifest-admin.webmanifest",
   "assets/app.css", "assets/core.js", "assets/standards.js", "assets/field.js", "assets/admin.js",
   "assets/logo.png", "assets/icon-192.png", "assets/icon-512.png", "assets/favicon.png",
 ];

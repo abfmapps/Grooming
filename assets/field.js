@@ -121,7 +121,7 @@
       : overdue ? `<b>Overdue: the checklist was due at ${esc(T.checklistDue)}</b>` : `Send to Head Office by ${esc(T.checklistDue)}`;
     return `
       <div class="hero">
-        <div class="logo-row"><img src="assets/logo.png" alt="Al Bonian FM"><a href="#/logout">${G.icon("logout")}Log out</a></div>
+        <div class="logo-row"><img src="assets/logo.png" alt="Al Bonian FM"><span class="row" style="gap:14px">${G.installButton()}<a href="#/logout">${G.icon("logout")}Log out</a></span></div>
         <div class="hi">${greet}</div>
         <h1>${esc(F.user.name)}</h1>
         ${campMode()
