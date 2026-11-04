@@ -80,6 +80,7 @@
       <div class="scrim" data-menu></div>
       <div class="shell">
         <aside class="side" aria-label="Menu">
+          <button class="mbar-btn side-close" data-menu aria-label="Close menu">${G.icon("x")}</button>
           <div class="brand"><img src="assets/logo.png" alt="Al Bonian FM" class="brand-logo"><b>Grooming<br>Control</b></div>
           <nav class="nav">${nav().map(([g, items]) => `<div class="nav-group">${g}</div>${items.map(([p, l, ic]) => `<a href="#/${p}" class="${page === p ? "on" : ""}">${G.icon(ic)}${l}${counts[p] ? `<span class="cnt ${["incidents", "hr"].includes(p) ? "hot" : ""}">${counts[p]}</span>` : ""}</a>`).join("")}`).join("")}</nav>
           <div class="user"><div class="avatar">${initials(D.user.name)}</div><div><b>${esc(D.user.name)}</b>${esc(S.roleLabel(D.user.role))}
@@ -756,8 +757,8 @@
          <select data-goto="#/analytics?weeks=${weeks}&site=">${opts(D.mySites, site, "All my sites")}</select>`)}
       ${trendAndMissed(ids, weeks, from, to, "Most-missed standards")}
       ${!site && weeksBySite.length > 1 ? `<div class="card pad panel mt"><h3><span>Pass rate by site and week</span><span class="legend"><span><i class="c-g"></i>100%</span><span><i class="c-g2"></i>95–99%</span><span><i class="c-a"></i>85–94%</span><span><i class="c-r"></i>&lt;85%</span><span><i class="c-x"></i>No checks</span></span></h3>
-        <div class="table-wrap"><table class="heat"><thead><tr><th></th>${weeksBySite[0].w.map((x, i, a) => `<th class="${i < a.length - 4 ? "hide-m" : ""}">${fmtDate(x.week)}</th>`).join("")}</tr></thead><tbody>
-        ${weeksBySite.map(({ s, w }) => `<tr><td class="name"><a href="#/sites/${s.id}">${esc(s.name)}</a></td>${w.map((x, i, a) => `<td class="${heatCls(x.pct)}${i < a.length - 4 ? " hide-m" : ""}" data-tip="${esc(s.name)}, week of ${fmtDate(x.week)}: ${x.pct == null ? "no checks" : `${x.pct.toFixed(1)}% (${x.tot} checks)`}" tabindex="0">${x.pct == null ? "–" : Math.round(x.pct)}</td>`).join("")}</tr>`).join("")}
+        <div class="table-wrap"><table class="heat"><thead><tr><th></th>${weeksBySite[0].w.map((x, i, a) => `<th class="${i < a.length - 3 ? "hide-m" : ""}">${fmtDate(x.week)}</th>`).join("")}</tr></thead><tbody>
+        ${weeksBySite.map(({ s, w }) => `<tr><td class="name"><a href="#/sites/${s.id}">${esc(s.name)}</a></td>${w.map((x, i, a) => `<td class="${heatCls(x.pct)}${i < a.length - 3 ? " hide-m" : ""}" data-tip="${esc(s.name)}, week of ${fmtDate(x.week)}: ${x.pct == null ? "no checks" : `${x.pct.toFixed(1)}% (${x.tot} checks)`}" tabindex="0">${x.pct == null ? "–" : Math.round(x.pct)}</td>`).join("")}</tr>`).join("")}
         </tbody></table></div></div>` : ""}
       <div class="grid-half mt">
         <div class="card pad panel"><h3><span>Findings by trade</span><span class="muted small">per 100 checks · trades with 10+ checks</span></h3>
@@ -970,11 +971,14 @@
     finally { G.busy(false); }
   }
 
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") document.body.classList.remove("nav-open"); });
   root.addEventListener("click", async (ev) => {
+    if (ev.target.closest(".scrim")) { document.body.classList.remove("nav-open"); return; }
     const b = ev.target.closest("button, a");
     if (!b) return;
     const d = b.dataset;
     if (d.menu !== undefined) { document.body.classList.toggle("nav-open"); return; }
+    if (b.closest(".side") && b.tagName === "A") document.body.classList.remove("nav-open");
     if (d.logout !== undefined) { ev.preventDefault(); G.logout(); }
     else if (d.refresh !== undefined) { ev.preventDefault(); await reload(); G.toast("Up to date."); }
     else if (d.print !== undefined) window.print();
