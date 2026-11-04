@@ -410,6 +410,19 @@
       missed: days - subs.length - todayPending, avg: avg == null ? null : `${String(Math.floor(avg / 60)).padStart(2, "0")}:${String(avg % 60).padStart(2, "0")}`,
     };
   }
+  /** Who was checked on a site in a period (any check type), and when checks happen. */
+  function coverage(D, siteId, from, to) {
+    const staff = D.employees.filter((e) => e.active && e.site_id === siteId);
+    const ids = new Set(staff.map((e) => e.id));
+    const cs = D.checks.filter((c) => c.site_id === siteId && c.date >= from && c.date <= to && ids.has(c.employee_id));
+    const mins = cs.map((c) => { const [h, m] = String(c.time || "").split(":").map(Number); return h * 60 + m; }).filter((x) => x >= 0);
+    const avg = mins.length ? Math.round(mins.reduce((a, b) => a + b, 0) / mins.length) : null;
+    const checked = new Set(cs.map((c) => c.employee_id)).size;
+    return {
+      staff: staff.length, checked, checks: cs.length, pct: staff.length ? (100 * checked) / staff.length : null,
+      last: cs.reduce((m, c) => (c.date > m ? c.date : m), ""), avg: avg == null ? null : `${String(Math.floor(avg / 60)).padStart(2, "0")}:${String(avg % 60).padStart(2, "0")}`,
+    };
+  }
   /** What each checker recorded. A checker who never finds a gap may not be checking properly. */
   function checkerActivity(D, siteIds, from, to) {
     const by = {};
@@ -552,6 +565,6 @@
     api, session, login, logout, esc, nowHM, ordinal, icon, siteChecklist, installButton, initials, addDays, daysBetween, workingDaysBetween, todayLocal, fmtDate, fmtDay, pct, plural,
     toast, busy, formData, shrinkPhoto, loginView,
     findingsFor, index, siteAudits, openActions, supplyAge, fieldLast7, overview, controlEvidence, monthlyReport, periodReport,
-    mondayOf, weekly, missedStandards, byTrade, punctuality, checkerActivity, hrPending, lineChart, barList, tableView, downloadCsv,
+    mondayOf, weekly, missedStandards, byTrade, punctuality, coverage, checkerActivity, hrPending, lineChart, barList, tableView, downloadCsv,
   };
 })();

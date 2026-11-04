@@ -121,14 +121,14 @@
       </div>
       <div class="grid2">
         <div class="card pad panel"><h3><span>Sites</span>${legend()}</h3>
-          ${rows.length === 0 ? empty(`No sites yet. Add them under <a class="blue" href="#/settings">Sites & users</a>.`) : `<div class="table-wrap"><table class="t">
+          ${rows.length === 0 ? empty(`No sites yet. Add them under <a class="blue" href="#/settings">Sites & users</a>.`) : `<div class="table-wrap"><table class="t m-cards">
             <thead><tr><th>Site</th><th class="hide-m">FM Manager</th><th>${G.siteChecklist() ? "Today" : "Checked today"}</th><th class="hide-m">Daily compliance, last 14 days</th><th>Last audit</th><th class="hide-m">Open</th></tr></thead><tbody>
             ${rows.map((r) => `<tr>
               <td class="nw"><a href="#/sites/${r.site.id}"><b>${esc(r.site.name)}</b></a><br><span class="muted small">${r.staff} staff</span></td>
               <td class="nw hide-m">${esc(r.manager) || `<span class="muted">–</span>`}</td>
-              <td><a href="#/checklists/${r.site.id}/${D.today}">${!G.siteChecklist() ? (r.checkedToday ? `<span class="pill green">${r.checkedToday} of ${r.staff}</span>` : `<span class="pill grey">None yet</span>`) : r.todayAt ? (r.todayAt > T.checklistDue ? `<span class="pill amber">${esc(r.todayAt)} late</span>` : `<span class="pill green">${esc(r.todayAt)}</span>`) : `<span class="pill ${G.nowHM() > T.checklistDue ? "red" : "grey"}">Not sent</span>`}</a></td>
+              <td data-label="${G.siteChecklist() ? "Today" : "Checked today"}"><a href="#/checklists/${r.site.id}/${D.today}">${!G.siteChecklist() ? (r.checkedToday ? `<span class="pill green">${r.checkedToday} of ${r.staff}</span>` : `<span class="pill grey">None yet</span>`) : r.todayAt ? (r.todayAt > T.checklistDue ? `<span class="pill amber">${esc(r.todayAt)} late</span>` : `<span class="pill green">${esc(r.todayAt)}</span>`) : `<span class="pill ${G.nowHM() > T.checklistDue ? "red" : "grey"}">Not sent</span>`}</a></td>
               <td class="hide-m"><div class="strip">${r.strip.map((d) => `<i class="${stripClass(d)}" title="${fmtDate(d.date)}: ${d.pct == null ? (G.siteChecklist() && d.sent ? "sent" : "no checks") : d.pct + "% passed"}${G.siteChecklist() && !d.sent ? ", not sent" : ""}"></i>`).join("")}</div></td>
-              <td class="nw">${r.lastAudit ? `<a href="#/audits/${r.lastAudit.id}">${auditScore(r.lastAudit.total)}</a>` : `<span class="muted">None yet</span>`}</td>
+              <td class="nw" data-label="Last audit">${r.lastAudit ? `<a href="#/audits/${r.lastAudit.id}">${auditScore(r.lastAudit.total)}</a>` : `<span class="muted">None yet</span>`}</td>
               <td class="nw hide-m">${r.open}${r.overdue ? `<span class="red small"> · ${r.overdue} late</span>` : ""}</td></tr>`).join("")}
             </tbody></table></div>`}
         </div>
@@ -756,22 +756,26 @@
          <select data-goto="#/analytics?weeks=${weeks}&site=">${opts(D.mySites, site, "All my sites")}</select>`)}
       ${trendAndMissed(ids, weeks, from, to, "Most-missed standards")}
       ${!site && weeksBySite.length > 1 ? `<div class="card pad panel mt"><h3><span>Pass rate by site and week</span><span class="legend"><span><i class="c-g"></i>100%</span><span><i class="c-g2"></i>95–99%</span><span><i class="c-a"></i>85–94%</span><span><i class="c-r"></i>&lt;85%</span><span><i class="c-x"></i>No checks</span></span></h3>
-        <div class="table-wrap"><table class="heat"><thead><tr><th></th>${weeksBySite[0].w.map((x) => `<th>${fmtDate(x.week)}</th>`).join("")}</tr></thead><tbody>
-        ${weeksBySite.map(({ s, w }) => `<tr><td class="name"><a href="#/sites/${s.id}">${esc(s.name)}</a></td>${w.map((x) => `<td class="${heatCls(x.pct)}" data-tip="${esc(s.name)}, week of ${fmtDate(x.week)}: ${x.pct == null ? "no checks" : `${x.pct.toFixed(1)}% (${x.tot} checks)`}" tabindex="0">${x.pct == null ? "–" : Math.round(x.pct)}</td>`).join("")}</tr>`).join("")}
+        <div class="table-wrap"><table class="heat"><thead><tr><th></th>${weeksBySite[0].w.map((x, i, a) => `<th class="${i < a.length - 4 ? "hide-m" : ""}">${fmtDate(x.week)}</th>`).join("")}</tr></thead><tbody>
+        ${weeksBySite.map(({ s, w }) => `<tr><td class="name"><a href="#/sites/${s.id}">${esc(s.name)}</a></td>${w.map((x, i, a) => `<td class="${heatCls(x.pct)}${i < a.length - 4 ? " hide-m" : ""}" data-tip="${esc(s.name)}, week of ${fmtDate(x.week)}: ${x.pct == null ? "no checks" : `${x.pct.toFixed(1)}% (${x.tot} checks)`}" tabindex="0">${x.pct == null ? "–" : Math.round(x.pct)}</td>`).join("")}</tr>`).join("")}
         </tbody></table></div></div>` : ""}
       <div class="grid-half mt">
         <div class="card pad panel"><h3><span>Findings by trade</span><span class="muted small">per 100 checks · trades with 10+ checks</span></h3>
           ${G.barList(trades.map((t) => ({ label: t.trade, value: t.rate, display: t.rate.toFixed(1), tip: `${t.trade}: ${t.findings} findings in ${t.checks} checks` })))}
           ${trades.length ? G.tableView(["Trade", "Checks", "Findings", "Per 100 checks"], trades.map((t) => [t.trade, t.checks, t.findings, t.rate.toFixed(1)])) : ""}</div>
-        <div class="card pad panel"><h3><span>Daily checklist punctuality</span><span class="muted small">due by ${esc(T.checklistDue)}</span></h3>
-          <table class="t"><thead><tr><th>Site</th><th>On time</th><th>Late</th><th>Missed</th><th>Avg time</th></tr></thead><tbody>
-          ${D.mySites.filter((s) => ids.includes(s.id)).map((s) => { const p = G.punctuality(D, s.id, from, to); return `<tr><td><a href="#/sites/${s.id}">${esc(s.name)}</a></td><td>${p.onTime} / ${p.days}</td><td class="${p.late ? "amber" : ""}">${p.late}</td><td class="${p.missed ? "red" : ""}">${p.missed}</td><td>${p.avg || "–"}</td></tr>`; }).join("")}
-          </tbody></table></div>
+        ${G.siteChecklist() ? `<div class="card pad panel"><h3><span>Daily checklist punctuality</span><span class="muted small">due by ${esc(T.checklistDue)}</span></h3>
+          <table class="t m-cards"><thead><tr><th>Site</th><th>On time</th><th>Late</th><th>Missed</th><th>Avg time</th></tr></thead><tbody>
+          ${D.mySites.filter((s) => ids.includes(s.id)).map((s) => { const p = G.punctuality(D, s.id, from, to); return `<tr><td><a href="#/sites/${s.id}">${esc(s.name)}</a></td><td data-label="On time">${p.onTime} / ${p.days}</td><td data-label="Late" class="${p.late ? "amber" : ""}">${p.late}</td><td data-label="Missed" class="${p.missed ? "red" : ""}">${p.missed}</td><td data-label="Avg time">${p.avg || "–"}</td></tr>`; }).join("")}
+          </tbody></table></div>`
+        : `<div class="card pad panel"><h3><span>Check coverage by site</span><span class="muted small">staff checked at least once in the period</span></h3>
+          <table class="t m-cards"><thead><tr><th>Site</th><th>Staff checked</th><th>Coverage</th><th>Checks</th><th>Last check</th><th>Avg time</th></tr></thead><tbody>
+          ${D.mySites.filter((s) => ids.includes(s.id)).map((s) => ({ s, c: G.coverage(D, s.id, from, to) })).filter((x) => x.c.staff).sort((x, y) => (x.c.pct ?? -1) - (y.c.pct ?? -1)).map(({ s, c }) => `<tr><td><a href="#/sites/${s.id}">${esc(s.name)}</a></td><td data-label="Staff checked">${c.checked} / ${c.staff}</td><td data-label="Coverage" class="${c.pct < 50 ? "red" : c.pct < 100 ? "amber" : "green"}">${Math.round(c.pct)}%</td><td data-label="Checks">${c.checks}</td><td data-label="Last check">${c.last ? fmtDate(c.last) : "–"}</td><td data-label="Avg time">${c.avg || "–"}</td></tr>`).join("")}
+          </tbody></table></div>`}
       </div>
       <div class="grid-half mt">
         <div class="card pad panel"><h3><span>Checker activity</span><span class="muted small">a very low gap rate can mean checks are not done properly</span></h3>
-          <div class="table-wrap"><table class="t"><thead><tr><th>Checker</th><th>Days</th><th>Site</th><th>Camp</th><th>Field</th><th>Gaps found</th><th>Gap rate</th></tr></thead><tbody>
-          ${checkers.map((c) => `<tr><td>${esc(c.name)}<br><span class="muted small">${c.sites.map(siteName).map(esc).join(", ")}</span></td><td>${c.days}</td><td>${c.site}</td><td>${c.camp}</td><td>${c.field}</td><td>${c.gaps}</td><td>${c.gapRate == null ? "–" : `<span class="${c.checked >= 50 && c.gapRate < 0.5 ? "amber" : ""}">${c.gapRate.toFixed(1)}%</span>`}</td></tr>`).join("") || `<tr><td colspan="7">${empty("No checks.")}</td></tr>`}
+          <div class="table-wrap"><table class="t m-cards"><thead><tr><th>Checker</th><th>Days</th><th>Site</th><th>Camp</th><th>Field</th><th>Gaps found</th><th>Gap rate</th></tr></thead><tbody>
+          ${checkers.map((c) => `<tr><td>${esc(c.name)}<br><span class="muted small">${c.sites.length > 3 ? `${c.sites.length} sites` : c.sites.map(siteName).map(esc).join(", ")}</span></td><td data-label="Days">${c.days}</td><td data-label="Site">${c.site}</td><td data-label="Camp">${c.camp}</td><td data-label="Field">${c.field}</td><td data-label="Gaps">${c.gaps}</td><td data-label="Gap rate">${c.gapRate == null ? "–" : `<span class="${c.checked >= 50 && c.gapRate < 0.5 ? "amber" : ""}">${c.gapRate.toFixed(1)}%</span>`}</td></tr>`).join("") || `<tr><td colspan="7">${empty("No checks.")}</td></tr>`}
           </tbody></table></div></div>
         <div class="card pad panel"><h3><span>Audits in this period</span><span class="muted small">pass mark ${T.auditPass}</span></h3>
           ${audits.length ? `<table class="t"><thead><tr><th>Date</th><th>Site</th><th>Grooming</th><th>PPE</th><th>Comms</th><th>Control</th><th>Total</th></tr></thead><tbody>${audits.map((a) => `<tr><td class="nw"><a class="blue" href="#/audits/${a.id}">${fmtDate(a.date)}</a></td><td>${esc(siteName(a.site_id))}</td><td>${a.s_grooming}</td><td>${a.s_ppe}</td><td>${a.s_comm}</td><td>${a.s_control}</td><td>${auditScore(a.total)}</td></tr>`).join("")}</tbody></table>` : empty("No audits in this period.")}</div>
