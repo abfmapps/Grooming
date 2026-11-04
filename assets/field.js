@@ -12,13 +12,30 @@
   async function start() {
     const u = G.session();
     if (!u) return G.loginView(root, { title: "Daily checklist for supervisors and managers. Log in with your username and PIN.", after: afterLogin });
-    if (!u.field) { location.href = "admin.html"; return; }
+    if (!u.field) return dashboardOnly(u);
     await load();
     window.addEventListener("hashchange", render);
     render();
   }
+  // A dashboard-only login (OCO, Director, HR…) opened the checklist app: let them choose instead of jumping away.
+  function dashboardOnly(u) {
+    root.innerHTML = `
+      <main class="login">
+        <div class="card">
+          <img src="assets/logo.png" alt="ABFM" class="login-logo">
+          <div class="eyebrow">Al Bonian FM</div>
+          <h1>Checklist app</h1>
+          <div class="bar-accent"></div>
+          <p class="mb">You're logged in as <b>${esc(u.name)}</b>${u.name === S.roleLabel(u.role) ? "" : ` (${esc(S.roleLabel(u.role))})`}. This login uses the dashboard, not the checklist app.</p>
+          <a class="btn block" href="admin.html">Open the dashboard</a>
+          <button class="btn ghost block" type="button" id="switch-user" style="margin-top:10px">Log in with a checklist account</button>
+          <div style="text-align:center;margin-top:14px">${G.installButton()}</div>
+        </div>
+      </main>`;
+    root.querySelector("#switch-user").addEventListener("click", () => { G.logout(false); start(); });
+  }
   function afterLogin(u) {
-    if (!u.field) { location.href = "admin.html"; return; }
+    if (!u.field) return dashboardOnly(u);
     location.hash = "#/";
     start();
   }
