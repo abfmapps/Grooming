@@ -7,10 +7,12 @@
 
   // ---------------- backend ----------------
   const ERRORS = {
-    login: "Please log in again.", pin: "Wrong username or PIN.", locked: "Too many wrong PINs. Try again in 10 minutes.",
+    login: "Please sign in again.", hr: "That HR number isn't registered. Ask your manager to add you.", locked: "Too many tries. Try again in 10 minutes.",
+    inactive: "Your account is switched off. Ask your manager.", not_admin: "This email isn't on the admin list. Ask the OCO to add it.",
+    super_only: "Only the OCO can add or change dashboard admins.", one_oco: "There is only one OCO account.", hr_format: "Type the HR number.", role_name: "Choose a role.",
     role: "Your role cannot do this.", site: "You don't have access to this site.", notfound: "Not found. Refresh and try again.",
-    missing: "Some staff are not checked yet.", exists: "That name already exists.", pin_format: "PIN must be 4 to 8 digits.",
-    self: "You can't deactivate your own account.", name: "Fill in the name.", item: "Choose or type an item.", finding: "Type the finding.",
+    missing: "Some staff are not checked yet.", exists: "That HR number or email is already used.",
+    self: "You can't switch off or change the role of this account.", name: "Fill in the name.", item: "Choose or type an item.", finding: "Type the finding.",
     offline: "No connection. Check the signal and try again.", details: "Describe what happened.", setting: "One of the rules has an invalid value.",
     email: "That email address doesn't look right.", no_email: "Add your email address first (Sites & users → Users).", amount: "The amount must be a number.",
     bad: "Something in the form isn't valid.", unknown: "This needs a newer version of the backend. Refresh the page; if it keeps happening, tell the OCO.", setup: "The app isn't connected to its database yet. See README, step 1.",
@@ -20,34 +22,54 @@
     if (!window.GROOMING_API) throw new Error(ERRORS.setup);
     let r;
     try {
+      const token = action === "login" ? "" : await currentToken();
       r = await fetch(window.GROOMING_API, {
         method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-        // "fn" names the backend function. "action" is also sent for scripts deployed before November 2026.
-        body: JSON.stringify({ action, ...body, fn: action, token: localStorage.getItem(TOKEN) || "" }),
+        body: JSON.stringify({ ...body, fn: action, token }),
       });
     } catch (e) { throw new Error(ERRORS.offline); }
     const out = await r.json().catch(() => ({ ok: false, error: "error" }));
     if (!out.ok) {
-      if (out.error === "login" && action !== "login") { logout(false); location.reload(); }
+      if (out.error === "login" && action !== "login") { await logout(false); location.reload(); }
       const err = new Error(ERRORS[out.error] || "Something went wrong. Please try again." + (out.detail ? ` (${out.detail})` : ""));
       err.code = out.error;
       throw err;
     }
     return out;
   }
-  function session() {
-    try { return localStorage.getItem(TOKEN) ? JSON.parse(localStorage.getItem(USER) || "null") : null; } catch (e) { return null; }
+  // ---------------- sign-in ----------------
+  // Checklist users: HR number → our own session token (TOKEN). Dashboard admins: email + password with Supabase Auth.
+  const SB = window.GROOMING_SB;
+  const sb = window.supabase && SB ? window.supabase.createClient(SB.url, SB.key, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: "abfm_grooming_admin" },
+  }) : null;
+  let recovering = /type=recovery/.test(location.hash);
+  if (sb) sb.auth.onAuthStateChange((ev) => { if (ev === "PASSWORD_RECOVERY") recovering = true; });
+  let authMode = "any";                       // the dashboard sets "admin": it only uses the admin sign-in
+  const authReady = () => (sb ? sb.auth.getSession().catch(() => null) : Promise.resolve());
+  async function adminToken() {
+    if (!sb) return "";
+    const { data } = await sb.auth.getSession().catch(() => ({ data: {} }));
+    return data && data.session ? data.session.access_token : "";
   }
-  async function login(username, pin) {
-    const out = await api("login", { username, pin });
+  async function currentToken() {
+    if (authMode === "admin") return adminToken();
+    return localStorage.getItem(TOKEN) || (await adminToken());
+  }
+  async function hasSession() { return authMode !== "admin" && !!localStorage.getItem(TOKEN) || !!(await adminToken()); }
+  function cachedUser() { try { return JSON.parse(localStorage.getItem(USER) || "null"); } catch (e) { return null; } }
+  function rememberUser(u) { localStorage.setItem(USER, JSON.stringify(u)); }
+  async function loginHr(hr) {
+    const out = await api("login", { hr });
     localStorage.setItem(TOKEN, out.token);
-    localStorage.setItem(USER, JSON.stringify(out.user));
+    rememberUser(out.user);
     return out.user;
   }
-  function logout(go = true) {
+  async function logout(go = true) {
     localStorage.removeItem(TOKEN);
     localStorage.removeItem(USER);
-    if (go) location.href = location.pathname.replace(/[^/]*$/, "") + "index.html";
+    if (sb) await sb.auth.signOut().catch(() => {});
+    if (go) location.replace(location.pathname);
   }
 
   // ---------------- icons (line icons, 24px grid, drawn with currentColor) ----------------
@@ -151,31 +173,96 @@
     });
   }
 
-  function loginView(root, { title, after }) {
-    root.innerHTML = `
+  const loginShell = (inner) => `
       <main class="login">
-        <form class="card" id="login-form">
+        <div class="card">
           <img src="assets/logo.png" alt="ABFM" class="login-logo">
           <div class="eyebrow">Al Bonian FM</div>
           <h1>Grooming Control</h1>
           <div class="bar-accent"></div>
+          ${inner}
+          <div style="text-align:center;margin-top:14px">${installButton()}</div>
+        </div>
+      </main>`;
+
+  /** Checklist app: sign in with your HR number. Managers can switch to the email sign-in. */
+  function loginView(root, { title, after }) {
+    root.innerHTML = loginShell(`
           <p class="muted small mb">${esc(title)}</p>
           <div class="flash err" id="login-err" hidden></div>
-          <label class="field">Username<input type="text" name="username" autocomplete="username" autocapitalize="none" required></label>
-          <label class="field">PIN<input type="password" name="pin" inputmode="numeric" autocomplete="current-password" required></label>
-          <button class="btn block" type="submit">Log in</button>
-          <div style="text-align:center;margin-top:14px">${installButton()}</div>
-        </form>
-      </main>`;
+          <form id="login-form">
+            <label class="field">HR number<input type="text" name="hr" autocomplete="username" autocapitalize="characters" spellcheck="false" required></label>
+            <button class="btn block" type="submit">Sign in</button>
+          </form>
+          ${sb ? `<p class="small muted" style="text-align:center;margin-top:14px">OCO or manager? <a href="#" class="blue" id="to-admin">Sign in with email</a></p>` : ""}`);
     root.querySelector("#login-form").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const f = formData(e.target);
       const err = root.querySelector("#login-err");
       busy(true);
-      try { after(await login(f.username.trim(), f.pin)); }
+      try { after(await loginHr(formData(e.target).hr.trim())); }
       catch (x) { err.textContent = x.message; err.hidden = false; }
       finally { busy(false); }
     });
+    const ta = root.querySelector("#to-admin");
+    if (ta) ta.addEventListener("click", (e) => { e.preventDefault(); adminLoginView(root, { after, back: () => loginView(root, { title, after }) }); });
+  }
+
+  /** Dashboard admins: email + password (Supabase Auth), with create account, forgot password and new password. */
+  function adminLoginView(root, { after, mode, error = "", note = "", back }) {
+    mode = mode || (recovering ? "newpw" : "in");
+    const T2 = { in: "Sign in with your admin email and password.", up: "Use the email address the OCO added as an admin. You'll get an email to confirm it.", reset: "We'll email you a link to choose a new password.", newpw: "Choose a new password." }[mode];
+    root.innerHTML = loginShell(`
+          <p class="muted small mb">${T2}</p>
+          ${note ? `<div class="flash">${note}</div>` : ""}
+          ${error ? `<div class="flash err">${error}</div>` : ""}
+          <form id="admin-form">
+            ${mode !== "newpw" ? `<label class="field">Email<input type="email" name="email" autocomplete="username" spellcheck="false" required></label>` : ""}
+            ${mode !== "reset" ? `<label class="field">${mode === "in" ? "Password" : "New password (at least 8 characters)"}<input type="password" name="pw" minlength="${mode === "in" ? 1 : 8}" autocomplete="${mode === "in" ? "current-password" : "new-password"}" required></label>` : ""}
+            <button class="btn block" type="submit">${{ in: "Sign in", up: "Create account", reset: "Send reset link", newpw: "Save new password" }[mode]}</button>
+          </form>
+          <p class="small muted" style="text-align:center;margin-top:14px">
+            ${mode === "in" ? `<a href="#" class="blue" data-mode="up">Create an admin account</a> · <a href="#" class="blue" data-mode="reset">Forgot password?</a>` : mode === "newpw" ? "" : `<a href="#" class="blue" data-mode="in">Back to sign in</a>`}
+            ${back && mode === "in" ? `<br><a href="#" class="blue" id="back-hr">Sign in with HR number instead</a>` : ""}
+          </p>`);
+    root.querySelectorAll("[data-mode]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); adminLoginView(root, { after, mode: a.dataset.mode, back }); }));
+    const bh = root.querySelector("#back-hr");
+    if (bh) bh.addEventListener("click", (e) => { e.preventDefault(); back(); });
+    root.querySelector("#admin-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const f = formData(e.target);
+      const email = (f.email || "").trim(), pw = f.pw || "";
+      const here = location.href.split("#")[0].split("?")[0];
+      busy(true);
+      try {
+        if (mode === "in") {
+          const { error: er } = await sb.auth.signInWithPassword({ email, password: pw });
+          if (er) throw new Error(/confirm/i.test(er.message) ? "Please confirm your email first: check your inbox for the link." : /invalid/i.test(er.message) ? "Wrong email or password." : er.message);
+          localStorage.removeItem(TOKEN);
+          after();
+        } else if (mode === "up") {
+          const { error: er } = await sb.auth.signUp({ email, password: pw, options: { emailRedirectTo: here } });
+          if (er) throw new Error(er.message);
+          adminLoginView(root, { after, back, note: "Account created. Check your email and click the link to confirm it, then sign in." });
+        } else if (mode === "reset") {
+          const { error: er } = await sb.auth.resetPasswordForEmail(email, { redirectTo: here });
+          if (er) throw new Error(er.message);
+          adminLoginView(root, { after, back, note: "If that email has an account, a reset link is on its way." });
+        } else {
+          const { error: er } = await sb.auth.updateUser({ password: pw });
+          if (er) throw new Error(er.message);
+          recovering = false;
+          history.replaceState(null, "", here);
+          toast("Password saved.");
+          after();
+        }
+      } catch (x) { adminLoginView(root, { after, mode, back, error: esc(x.message) }); }
+      finally { busy(false); }
+    });
+  }
+  /** Signed-in admins can change their password. */
+  async function changePassword(pw) {
+    const { error: er } = await sb.auth.updateUser({ password: pw });
+    if (er) throw new Error(er.message);
   }
 
   // ---------------- calculations used by the dashboard ----------------
@@ -571,7 +658,8 @@
   }
 
   window.G = {
-    version: "13", api, session, login, logout, esc, nowHM, ordinal, icon, siteChecklist, installButton, initials, addDays, daysBetween, workingDaysBetween, todayLocal, fmtDate, fmtDay, pct, plural,
+    version: "14", api, logout, loginHr, hasSession, cachedUser, rememberUser, authReady, adminLoginView, changePassword,
+    setAuthMode: (m) => { authMode = m; }, isRecovering: () => recovering, esc, nowHM, ordinal, icon, siteChecklist, installButton, initials, addDays, daysBetween, workingDaysBetween, todayLocal, fmtDate, fmtDay, pct, plural,
     toast, busy, formData, shrinkPhoto, loginView,
     findingsFor, index, siteAudits, openActions, supplyAge, fieldLast7, overview, controlEvidence, monthlyReport, periodReport,
     mondayOf, weekly, missedStandards, byTrade, punctuality, coverage, checkerActivity, hrPending, lineChart, barList, tableView, downloadCsv,

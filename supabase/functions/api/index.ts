@@ -247,12 +247,23 @@ async function admin(b: any) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   if (req.method === "GET") return reply({ ok: true, app: "ABFM Grooming backend (Supabase)" });
-  const text = await req.text();
   let b: any;
-  try { b = JSON.parse(text); } catch { return reply({ ok: false, error: "bad" }); }
+  try { b = JSON.parse(await req.text()); } catch { return reply({ ok: false, error: "bad" }); }
   const fn = String(b.fn || b.action || "");
+  // Never trust these from the page: they are set here.
+  delete b._email; delete b._ip;
+  b._ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
   try {
     if (fn === "import" || fn === "importPhoto" || fn === "loadDemo") return reply(await admin(b));
+    // Dashboard admins send their Supabase sign-in (a JWT). Check it with Supabase Auth and pass on the confirmed email.
+    if (/^eyJ[\w-]+\.[\w-]+\.[\w-]+$/.test(String(b.token || ""))) {
+      const r = await fetch(`${SB_URL}/auth/v1/user`, { headers: { Authorization: `Bearer ${b.token}`, apikey: SB_KEY } });
+      const au = r.ok ? await r.json() : null;
+      if (!au || !au.email || !(au.email_confirmed_at || au.confirmed_at)) return reply({ ok: false, error: "login" });
+      b._email = String(au.email).toLowerCase();
+      b.token = "";
+    }
+    const text = JSON.stringify(b);
     const out = await sql.begin(async (tx: any) => {
       if (fn !== "photo" && fn !== "field" && fn !== "admin" && fn !== "activity") await tx`select pg_advisory_xact_lock(4711)`;
       const store = await preload(tx, fn, b);

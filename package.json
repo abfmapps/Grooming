@@ -1,11 +1,18 @@
 {
   "name": "abfm-grooming",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
-  "description": "ABFM Grooming, Etiquette & Work Efficiency: daily checklist and management dashboard (GitHub Pages + Google Sheet)",
+  "type": "module",
+  "description": "ABFM Grooming, Etiquette & Work Efficiency: daily checklist and management dashboard (GitHub Pages + Supabase)",
   "scripts": {
-    "dev": "node dev/server.mjs",
-    "demo": "node dev/server.mjs --demo"
+    "build": "node supabase/build.mjs",
+    "dev": "node supabase/build.mjs && node dev/local.mjs",
+    "demo": "node supabase/build.mjs && node dev/local.mjs --demo"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite-socket": "^0.2.18",
+    "deno": "^2.9.6",
+    "postgres": "3.4.5"
   },
   "engines": { "node": ">=20" }
 }

@@ -9,17 +9,24 @@
   let CF = null;       // check form state
 
   // ---------------- start ----------------
+  let started = false;
   async function start() {
-    const u = G.session();
-    if (!u) return G.loginView(root, { title: "Daily checklist for supervisors and managers. Log in with your username and PIN.", after: afterLogin });
-    if (!u.field) {
-      // The saved login may be older than a role change: ask the server once before showing the choice screen.
-      try { const me = (await G.api("field", {})).user; if (me && me.field) localStorage.setItem("abfm_grooming_user", JSON.stringify(me)); else return dashboardOnly(u); }
-      catch (e) { return dashboardOnly(u); }
+    await G.authReady();
+    if (G.isRecovering()) return G.adminLoginView(root, { after: start });
+    if (!(await G.hasSession())) return G.loginView(root, { title: "Daily checklist. Sign in with your HR number.", after: afterLogin });
+    try { await load(); }
+    catch (e) {
+      if (e.code === "role") return dashboardOnly(G.cachedUser() || {});
+      if (e.code === "not_admin") return notOnList(e.message);
+      return;
     }
-    await load();
-    window.addEventListener("hashchange", render);
+    if (!started) { window.addEventListener("hashchange", render); started = true; }
     render();
+  }
+  function notOnList(msg) {
+    root.innerHTML = `<main class="login"><div class="card"><img src="assets/logo.png" alt="ABFM" class="login-logo"><h1>Grooming Control</h1><div class="bar-accent"></div>
+      <div class="flash err">${esc(msg)}</div><button class="btn block" type="button" id="switch-user">Sign out</button></div></main>`;
+    root.querySelector("#switch-user").addEventListener("click", async () => { await G.logout(false); start(); });
   }
   // A dashboard-only login (OCO, Director, HR…) opened the checklist app: let them choose instead of jumping away.
   function dashboardOnly(u) {
@@ -30,16 +37,16 @@
           <div class="eyebrow">Al Bonian FM</div>
           <h1>Checklist app</h1>
           <div class="bar-accent"></div>
-          <p class="mb">You're logged in as <b>${esc(u.name)}</b>${u.name === S.roleLabel(u.role) ? "" : ` (${esc(S.roleLabel(u.role))})`}. This login uses the dashboard, not the checklist app.</p>
+          <p class="mb">${u.name ? `You're signed in as <b>${esc(u.name)}</b>${u.name === S.roleLabel(u.role) ? "" : ` (${esc(S.roleLabel(u.role))})`}. ` : ""}This sign-in is for the dashboard, not the checklist app.</p>
           <a class="btn block" href="admin.html">Open the dashboard</a>
-          <button class="btn ghost block" type="button" id="switch-user" style="margin-top:10px">Log in with a checklist account</button>
+          <button class="btn ghost block" type="button" id="switch-user" style="margin-top:10px">Sign in with an HR number</button>
           <div style="text-align:center;margin-top:14px">${G.installButton()}</div>
         </div>
       </main>`;
-    root.querySelector("#switch-user").addEventListener("click", () => { G.logout(false); start(); });
+    root.querySelector("#switch-user").addEventListener("click", async () => { await G.logout(false); start(); });
   }
   function afterLogin(u) {
-    if (!u.field) return dashboardOnly(u);
+    if (u && !u.field) return dashboardOnly(u);
     location.hash = "#/";
     start();
   }

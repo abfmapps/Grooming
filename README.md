@@ -5,16 +5,20 @@ Two free apps for the **Al Bonian FM Grooming, Etiquette & Work Efficiency Polic
 - **Checklist app** (supervisors, FM Managers, Camp Boss, Site Managers): `https://abfmapps.github.io/Grooming/`
 - **Management dashboard** (Director, OCO, HSE, HR, Stores, FM Managers): `https://abfmapps.github.io/Grooming/admin.html`
 
-Everyone logs in with a **username and PIN**. The app sends each person to the right place for their role; FM Managers can use both and only see their own sites.
+Sign-in works like ABFM Training:
+- **Checklist app users** (Camp Boss, HSE, Supervisors, Site Managers) sign in with their **HR number**. No password. Admins add them in the dashboard.
+- **Dashboard admins** (OCO, Director, HR, Stores, FM Managers) sign in with their **email and a password** they choose.
+- The **super admin** is the OCO (`zarrade.omar@gmail.com`). Only the super admin can add or remove dashboard admins. The OCO and the Director can add checklist app users.
+- The OCO and FM Managers can also open the checklist app with their email sign-in.
 
-**Where the data lives:** in a **Supabase** database (project *Grooming App*), never in this repo. The pages only talk to one Edge Function, `api`, which checks each person's PIN, role and sites. The tables sit in a private `grooming` schema that the internet can't reach directly. Check photos are kept in a private Supabase Storage bucket.
+**Where the data lives:** in a **Supabase** database (project *Grooming App*), never in this repo. The pages only talk to one Edge Function, `api`, which checks each person's sign-in, role and sites. The tables sit in a private `grooming` schema that the internet can't reach directly. Check photos are kept in a private Supabase Storage bucket.
 
 ---
 
 ## 1. How it's connected
 
 - **Database:** `supabase/migrations/` creates the tables (one per area: sites, users, employees, checks, supply, submissions, audits, actions, incidents, discipline, activity, settings).
-- **Backend:** `supabase/functions/api/`. It runs the backend logic in [`setup/grooming-backend.gs`](setup/grooming-backend.gs) (the same file the local test server uses) on Postgres. After changing that file, run `node supabase/build.mjs` and deploy the `api` function again (with JWT verification off: the function checks PINs itself).
+- **Backend:** `supabase/functions/api/`. It runs the backend logic in [`setup/grooming-backend.gs`](setup/grooming-backend.gs) (the same file the local test server uses) on Postgres. After changing that file, run `node supabase/build.mjs` and deploy the `api` function again (with JWT verification off: the function checks sign-ins itself).
 - **App:** [`config.js`](config.js) holds the function's address.
 
 The data was moved here from the original Google Sheet on 5 November 2026. The Sheet is no longer used and can be kept as an archive.
@@ -23,16 +27,18 @@ The data was moved here from the original Google Sheet on 5 November 2026. The S
 
 ## 2. Set up your people
 
-1. Open the dashboard link and log in as **admin** with your `ADMIN_PIN`.
+1. **First time only (super admin):** open the dashboard, choose **Create an admin account**, use `zarrade.omar@gmail.com` and pick a password. Confirm it from the email Supabase sends, then sign in.
 2. **Sites, users & rules → Sites:** add your sites.
-3. **Sites, users & rules → Users:** add each supervisor, camp boss, site manager and FM Manager with a PIN and their sites. Managers (Director, OCO, HSE, HR, Stores) see all sites. Add an email for anyone who should get the daily summary.
-4. **Rules & daily email:** check the policy rules and the checklist due time.
-5. **Employees → Import from Excel / CSV:** copy these columns from Excel and paste them in: **staff number, name, trade, site, uniform size, shoe size**.
-6. Change your own PIN under **Sites, users & rules → Change my PIN**.
+3. **Employees → Import from Excel / CSV:** paste these columns from Excel: **staff number, name, trade, site, uniform size, shoe size** (and accommodation for camp checks).
+4. **Sites, users & rules → Checklist app users:** add each Camp Boss, HSE officer, supervisor and site manager with their **HR number**, role and sites.
+5. **Dashboard admin** tab (super admin only): add each admin's email and role. They then open the dashboard, choose **Create an admin account** with that email, and confirm it.
+6. **Rules & daily email:** check the policy rules and the checklist due time.
 
-## 3. Share with supervisors
+In Supabase → **Authentication → URL Configuration**, set the Site URL to `https://abfmapps.github.io/Grooming/admin.html`, so the confirmation and password-reset emails bring people back to the dashboard.
 
-Send the checklist link on WhatsApp with each person's username and PIN. To install:
+## 3. Share with checklist users
+
+Send the checklist link on WhatsApp. They sign in with their HR number. To install:
 - **Android (Chrome):** ⋮ → *Add to Home screen / Install app*.
 - **iPhone (Safari):** Share → *Add to Home Screen*.
 
@@ -69,17 +75,20 @@ The checklist items are in [`assets/standards.js`](assets/standards.js). After e
 
 - **Speed:** each save takes well under a second.
 - **Size:** the dashboard loads the last 100 days and loads older data when you open an older month.
-- **Logins** last 14 days on a phone. Six wrong PINs lock that username for 10 minutes. Every change is written to the activity log.
+- **Sign-ins:** checklist users stay signed in for 14 days. Ten unknown HR numbers from one place lock sign-in there for 10 minutes. Admins reset forgotten passwords from the sign-in screen. Every change is written to the activity log.
 - **Back-ups:** Supabase backs up the database daily; the dashboard's **Reports & exports** also download every table as CSV.
 - **Needs a signal:** checks are saved online; there's no offline mode yet.
 - Deduction amounts are set by HR under **Rules** (the policy leaves them to HR under labour law) and recorded per case in the HR register.
 
-## Try it on a computer without Google
+## Try it on your computer
 
 ```bash
-npm run demo        # needs Node.js 20+; runs the real backend script with demo data
+npm install
 ```
-Then open http://localhost:8080 (PIN 1234 for every demo user). `dev/` holds this local stand-in for Google; it isn't used by the live site.
+```bash
+npm run demo
+```
+Needs Node.js 20+. It runs a local copy of everything: Postgres (PGlite), the real Edge Function under Deno, and stand-ins for Supabase sign-in and photo storage. Open http://localhost:8080. Demo checklist users sign in with HR numbers **D1001–D1008**. Demo admins use `director@demo.local`, `hr@demo.local`, `faisal@demo.local` and so on, with password `demo1234`; the super admin email works with it too. `npm run dev` starts with an empty database. None of this touches the live site.
 
 ## Files
 
@@ -95,6 +104,6 @@ assets/app.css             styles
 setup/grooming-backend.gs  backend logic (runs in the Supabase Edge Function and the local test server)
 supabase/                  database tables, Edge Function, build script
 sw.js, manifest.webmanifest  install-as-app support
-dev/                       local test server
+dev/local.mjs              local copy of the whole system (npm run demo)
 docs/mockups/              the original design mockups
 ```

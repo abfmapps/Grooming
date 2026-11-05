@@ -1,23 +1,18 @@
 /**
  * ABFM Grooming Control: private backend.
  *
- * All data lives in the Google Sheet this script is attached to. The public app (GitHub Pages)
- * only talks to this script, which checks the user's PIN, role and sites on every request.
+ * Runs in the Supabase Edge Function "api" (supabase/functions/api), which supplies the Google-style
+ * services this file was first written for (tables, storage) on top of Postgres. The local test server
+ * in dev/ runs it the same way.
  *
- * Setup (about 5 minutes), also in the README:
- *  1. Create a new Google Sheet (e.g. "ABFM Grooming data"). Extensions → Apps Script.
- *  2. Replace everything in Code.gs with this file. Change ADMIN_PIN below.
- *  3. Project Settings (⚙️) → Time zone: (GMT+04:00) Dubai.
- *  4. Deploy → New deployment → ⚙️ Select type: Web app → Execute as: Me → Who has access: Anyone → Deploy.
- *     Allow the permissions it asks for (Sheets, and Drive for photos).
- *  5. Copy the Web app URL into config.js in the GitHub repo.
- *  Optional: to try it with made-up data, choose loadDemoData in the function list and press ▶ Run.
- *  Optional: daily email summary to managers. Choose setupDailyEmail in the function list and press ▶ Run once
- *  (it asks for permission to send email). Change the time or turn it off in the dashboard: Sites & users → Rules.
- *  When you change this script later: Deploy → Manage deployments → ✏️ → Version: New version → Deploy
- *  (keeps the same URL).
+ * Who signs in, and how (the same model as ABFM Training):
+ *  - Dashboard admins (OCO, Director, HR, Stores, FM Managers) sign in with email and password (Supabase Auth).
+ *    The Edge Function checks their sign-in and passes the confirmed email in as b._email.
+ *    SUPER_ADMIN (the OCO) is the only one who can add or remove dashboard admins.
+ *  - Checklist app users (Camp Boss, HSE, Supervisors, Site Managers) sign in with their HR number only.
+ *    Admins add them in the dashboard.
  */
-const ADMIN_PIN = "1234";            // PIN for the first "admin" login. Change it here, or in the app after logging in.
+const SUPER_ADMIN = "zarrade.omar@gmail.com";   // the OCO: the only one who can add or remove dashboard admins
 const PHOTO_FOLDER = "ABFM Grooming photos";
 const TZ = "Asia/Dubai";
 const SESSION_DAYS = 14;
@@ -58,8 +53,11 @@ const ROLES = {
   hse: { field: true, manage: false, all: true },            // HSE officers check staff and PPE on any site, from the phone
   hr: { field: false, manage: true, all: true },
   stores: { field: false, manage: true, all: true },
-  admin: { field: true, manage: true, all: true },
 };
+/** Dashboard roles sign in with email; the others sign in to the checklist app with their HR number. */
+const isAdminRole_ = (role) => !!(ROLES[role] && ROLES[role].manage);
+const normHr_ = (v) => String(v == null ? "" : v).replace(/\s+/g, "").toUpperCase().slice(0, 30);
+const normEmail_ = (v) => String(v == null ? "" : v).trim().toLowerCase().slice(0, 120);
 const CAN = {
   audit: (u) => ["oco", "hse", "director", "admin"].indexOf(u.role) >= 0,
   closeActions: (u) => ["oco", "hse", "director", "admin", "fm_manager", "hr"].indexOf(u.role) >= 0,
@@ -171,15 +169,6 @@ function settings_() {
 const isDate_ = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ""));
 
 /* ---------------- PINs and sessions ---------------- */
-function hex_(bytes) { return bytes.map((b) => ("0" + (b & 0xff).toString(16)).slice(-2)).join(""); }
-function hashPin_(pin, salt) {
-  salt = salt || id_();
-  return salt + ":" + hex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + ":" + pin, Utilities.Charset.UTF_8));
-}
-function pinOk_(pin, stored) {
-  const salt = String(stored).split(":")[0];
-  return !!salt && hashPin_(pin, salt) === stored;
-}
 function secret_() {
   const p = PropertiesService.getScriptProperties();
   let s = p.getProperty("SESSION_SECRET");
@@ -189,9 +178,13 @@ function secret_() {
 function sign_(payload) {
   return Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(payload, secret_())).replace(/=+$/, "");
 }
-function ensureAdmin_() {
-  if (rows_("Users").length) return;
-  insert_("Users", { id: id_(), username: "admin", name: "Administrator", role: "admin", pin: hashPin_(ADMIN_PIN), sites: "", active: "1" });
+/** A signed-in admin (email confirmed by Supabase Auth). The super admin always has an account. */
+function userFromEmail_(email) {
+  email = normEmail_(email);
+  let u = rows_("Users").filter((x) => normEmail_(x.email) === email && isAdminRole_(x.role))[0];
+  if (!u && email === SUPER_ADMIN) u = insert_("Users", { id: id_(), username: email, name: "Operations Control Officer", role: "oco", pin: "", sites: "", active: "1", email: email });
+  if (!u || u.active !== "1") fail_("not_admin");
+  return publicUser_(u);
 }
 function userFromToken_(token) {
   const parts = String(token || "").split(".");
@@ -199,7 +192,7 @@ function userFromToken_(token) {
   if (sign_(parts[0] + "." + parts[1]) !== parts[2]) fail_("login");
   if (Number(parts[1]) < Date.now() / 1000) fail_("login");
   const u = rows_("Users").filter((x) => x.id === parts[0] && x.active === "1")[0];
-  if (!u) fail_("login");
+  if (!u || isAdminRole_(u.role)) fail_("login");        // admins use their email sign-in, not HR tokens
   return publicUser_(u);
 }
 function publicUser_(u) {
@@ -208,10 +201,12 @@ function publicUser_(u) {
   const own = String(u.sites || "").split(",").filter(Boolean);
   return {
     id: u.id, username: u.username, name: u.name, role: u.role, field: r.field, manage: r.manage,
+    super: normEmail_(u.email) === SUPER_ADMIN && u.role === "oco",
     siteIds: r.all ? active : own.filter((s) => active.indexOf(s) >= 0),
     email: u.email || "",
     can: { audit: CAN.audit(u), closeActions: CAN.closeActions(u), issueSupply: CAN.issueSupply(u), manageStaff: CAN.manageStaff(u), manageUsers: CAN.manageUsers(u), markTraining: CAN.markTraining(u), checkTypes: CAN.checkTypes(u),
-      discipline: CAN.discipline(u), incidents: CAN.incidents(u), activity: CAN.activity(u), settings: CAN.settings(u) },
+      discipline: CAN.discipline(u), incidents: CAN.incidents(u), activity: CAN.activity(u), settings: CAN.settings(u),
+      manageAdmins: normEmail_(u.email) === SUPER_ADMIN && u.role === "oco" },
   };
 }
 function siteOk_(u, siteId) { if (u.siteIds.indexOf(String(siteId)) < 0) fail_("site"); }
@@ -227,9 +222,8 @@ function doPost(e) {
   const lock = write ? LockService.getScriptLock() : null;
   try {
     if (lock) lock.waitLock(20000);
-    ensureAdmin_();
     if (fnName === "login") return json_(login_(b));
-    const u = userFromToken_(b.token);
+    const u = b._email ? userFromEmail_(b._email) : userFromToken_(b.token);
     const fn = READS.hasOwnProperty(fnName) ? READS[fnName] : WRITES.hasOwnProperty(fnName) ? WRITES[fnName] : null;
     if (!fn) return json_({ ok: false, error: "unknown" });
     const out = fn(u, b) || {};
@@ -243,18 +237,16 @@ function doPost(e) {
   }
 }
 
+/** Checklist app sign-in with an HR number. Too many unknown numbers from one place locks it for 10 minutes. */
 function login_(b) {
-  const username = clip_(b.username, 60).toLowerCase();
+  const hr = normHr_(b.hr);
   const c = CacheService.getScriptCache();
-  const key = "fail:" + username;
+  const key = "hr:" + clip_(b._ip || "", 60);
   const fails = Number(c.get(key) || 0);
-  if (fails >= 6) return { ok: false, error: "locked" };
-  const u = rows_("Users").filter((x) => x.username.toLowerCase() === username && x.active === "1")[0];
-  if (!u || !pinOk_(String(b.pin || ""), u.pin)) {
-    c.put(key, String(fails + 1), 600);
-    return { ok: false, error: "pin" };
-  }
-  c.remove(key);
+  if (fails >= 10) return { ok: false, error: "locked" };
+  const u = hr ? rows_("Users").filter((x) => normHr_(x.username) === hr && !isAdminRole_(x.role))[0] : null;
+  if (!u) { c.put(key, String(fails + 1), 600); return { ok: false, error: "hr" }; }
+  if (u.active !== "1") return { ok: false, error: "inactive" };
   const exp = Math.floor(Date.now() / 1000) + SESSION_DAYS * 86400;
   const payload = u.id + "." + exp;
   return { ok: true, token: payload + "." + sign_(payload), user: publicUser_(u) };
@@ -334,7 +326,7 @@ const READS = {
       settings: settings_(),
     };
     if (u.can.manageUsers) {
-      out.users = rows_("Users").map((x) => ({ id: x.id, username: x.username, name: x.name, role: x.role, email: x.email || "", sites: String(x.sites).split(",").filter(Boolean), active: x.active === "1" }));
+      out.users = rows_("Users").map((x) => ({ id: x.id, username: x.username, name: x.name, role: x.role, email: x.email || "", admin: isAdminRole_(x.role), super: normEmail_(x.email) === SUPER_ADMIN && x.role === "oco", sites: String(x.sites).split(",").filter(Boolean), active: x.active === "1" }));
     }
     return out;
   },
@@ -550,43 +542,51 @@ const WRITES = {
     insert_("Sites", { id: id_(), name: name, active: "1" });
   },
 
+  /**
+   * Checklist app users (HR number) can be managed by the OCO and the Director.
+   * Dashboard admins (email) only by the super admin. Nobody else can be OCO.
+   */
   saveUser: function (u, b) {
     if (!u.can.manageUsers) fail_("role");
-    if (!ROLES[b.role]) fail_("role_name");
-    const pin = String(b.pin || "");
-    if (pin && !/^\d{4,8}$/.test(pin)) fail_("pin_format");
-    const sites = (Array.isArray(b.sites) ? b.sites : []).map(String).filter((s) => rows_("Sites").some((x) => x.id === s)).join(",");
-    const email = clip_(b.email, 120);
-    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail_("email");
-    if (b.id) {
-      const x = rows_("Users").filter((y) => y.id === String(b.id))[0];
-      if (!x) fail_("notfound");
-      x.name = clip_(b.name, 80) || x.name;
-      x.role = b.role;
-      x.sites = sites;
-      if (b.email !== undefined) x.email = email;
-      if (b.active !== undefined) {
-        if (x.id === u.id && !b.active) fail_("self");
-        x.active = b.active ? "1" : "0";
+    const x = b.id ? rows_("Users").filter((y) => y.id === String(b.id))[0] : null;
+    if (b.id && !x) fail_("notfound");
+    const role = b.role !== undefined ? String(b.role) : x.role;
+    if (!ROLES[role]) fail_("role_name");
+    const admin = isAdminRole_(role);
+    if ((admin || (x && isAdminRole_(x.role))) && !u.can.manageAdmins) fail_("super_only");
+    if (role === "oco" && !(x && x.role === "oco")) fail_("one_oco");
+    if (x && x.role === "oco" && (role !== "oco" || b.active === false)) fail_("self");
+    if (x && x.id === u.id && b.active === false) fail_("self");
+    const sites = b.sites !== undefined ? (Array.isArray(b.sites) ? b.sites : []).map(String).filter((s) => rows_("Sites").some((y) => y.id === s)).join(",") : (x ? x.sites : "");
+    let username = x ? x.username : "";
+    let email = x ? x.email : "";
+    if (admin) {
+      if (b.email !== undefined || !x || !isAdminRole_(x.role)) {
+        email = normEmail_(b.email);
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail_("email");
+        if (rows_("Users").some((y) => y !== x && isAdminRole_(y.role) && normEmail_(y.email) === email)) fail_("exists");
       }
-      if (pin) x.pin = hashPin_(pin);
+      username = email;
+    } else {
+      if (b.hr !== undefined || !x || isAdminRole_(x.role)) {
+        username = normHr_(b.hr);
+        if (!username) fail_("hr_format");
+        if (rows_("Users").some((y) => y !== x && !isAdminRole_(y.role) && normHr_(y.username) === username)) fail_("exists");
+      }
+      if (b.email !== undefined) {
+        email = normEmail_(b.email);
+        if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) fail_("email");
+      }
+    }
+    const name = b.name !== undefined ? clip_(b.name, 80) : x.name;
+    if (!name) fail_("name");
+    if (x) {
+      x.name = name; x.role = role; x.sites = sites; x.username = username; x.email = email; x.pin = "";
+      if (b.active !== undefined) x.active = b.active ? "1" : "0";
       update_("Users", x);
       return;
     }
-    const username = clip_(b.username, 40).toLowerCase().replace(/[^a-z0-9._-]/g, "");
-    if (!username || !clip_(b.name, 80)) fail_("name");
-    if (!pin) fail_("pin_format");
-    if (rows_("Users").some((y) => y.username.toLowerCase() === username)) fail_("exists");
-    insert_("Users", { id: id_(), username: username, name: clip_(b.name, 80), role: b.role, pin: hashPin_(pin), sites: sites, active: "1", email: email });
-  },
-
-  /** Any user can change their own PIN. */
-  changePin: function (u, b) {
-    const x = rows_("Users").filter((y) => y.id === u.id)[0];
-    if (!pinOk_(String(b.old || ""), x.pin)) fail_("pin");
-    if (!/^\d{4,8}$/.test(String(b.pin || ""))) fail_("pin_format");
-    x.pin = hashPin_(String(b.pin));
-    update_("Users", x);
+    insert_("Users", { id: id_(), username: username, name: name, role: role, pin: "", sites: sites, active: "1", email: email });
   },
 
   saveEmployee: function (u, b) {
@@ -765,8 +765,7 @@ function log_(u, fn, b, out) {
       case "createAudit": d = name(b.site_id, "Sites") + " · " + ((+b.s_grooming || 0) + (+b.s_ppe || 0) + (+b.s_comm || 0) + (+b.s_control || 0)); break;
       case "addAction": d = clip_(b.finding, 80); break;
       case "saveSite": d = clip_(b.name, 60) || ("id " + b.id); break;
-      case "saveUser": d = clip_(b.username || b.name, 60) + (b.pin ? " · PIN set" : "") + (b.active !== undefined ? (b.active ? " · activated" : " · deactivated") : ""); break;
-      case "changePin": d = "own PIN"; break;
+      case "saveUser": d = clip_(b.name || b.hr || b.email || ("id " + b.id), 60) + (b.role ? " · " + b.role : "") + (b.active !== undefined ? (b.active ? " · activated" : " · deactivated") : ""); break;
       case "saveEmployee": d = clip_(b.staff_no, 30) + " " + clip_(b.name, 60); break;
       case "importEmployees": d = (out.added || 0) + " added, " + (out.updated || 0) + " updated"; break;
       case "saveSettings": d = Object.keys(b.settings || {}).join(", "); break;
@@ -866,7 +865,6 @@ function savePhoto_(dataUrl, emp) {
  * loadDemoData above and press ▶ Run. To start again, delete the tabs (except one) and run it again.
  */
 function loadDemoData() {
-  ensureAdmin_();
   if (rows_("Employees").length) throw new Error("The sheet already has staff. Delete the tabs first to load demo data.");
   let seed = 42;
   const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
@@ -876,7 +874,7 @@ function loadDemoData() {
   const siteId = {};
   const siteRows = SITES.map((s) => { const id = id_(); siteId[s[0]] = id; return { id: id, name: s[0], active: "1" }; });
   insertMany_("Sites", siteRows);
-  const pin = hashPin_("1234");
+  // Dashboard demo admins sign in with <username>@demo.local (the OCO with SUPER_ADMIN); checklist users with HR number D1001, D1002, ...
   const USERS = [
     ["director", "Khalid Al Mansoori", "director", []], ["oco", "Layla Haddad", "oco", []], ["hse", "Arjun Nair", "hse", []],
     ["hr", "Mariam Saeed", "hr", []], ["stores", "Peter Fernandes", "stores", []],
@@ -887,7 +885,12 @@ function loadDemoData() {
     ["george", "George Mathew", "site_manager", ["Corniche Towers"]], ["campboss", "Hamid Rahimi", "camp_boss", ["Khalifa City Camp", "Al Reem Villas", "Yas Community"]],
   ];
   const userName = {};
-  insertMany_("Users", USERS.map((x) => { userName[x[0]] = x[1]; return { id: id_(), username: x[0], name: x[1], role: x[2], pin: pin, sites: x[3].map((n) => siteId[n]).join(","), active: "1" }; }));
+  let hrNo = 1000;
+  insertMany_("Users", USERS.map((x) => {
+    userName[x[0]] = x[1];
+    const email = isAdminRole_(x[2]) ? (x[2] === "oco" ? SUPER_ADMIN : x[0] + "@demo.local") : "";
+    return { id: id_(), username: email || "D" + (++hrNo), name: x[1], role: x[2], pin: "", sites: x[3].map((n) => siteId[n]).join(","), active: "1", email: email };
+  }));
   const checker = { "Al Reem Villas": "omar", "Yas Community": "ravi", "Khalifa City Camp": "anil", "Saadiyat Residences": "deepak", "Mussafah Workshop": "vinod", "Corniche Towers": "george" };
   const FIRST = ["Mohammed", "Rajesh", "Bikash", "Joseph", "Abdul", "Suresh", "Imran", "Ramesh", "Nabin", "Vijay", "Ali", "Santosh", "Ganesh", "Prakash", "Sunil", "Arif", "Ramu", "Manoj", "Hari", "Kiran", "Shahid", "Dinesh", "Ajay", "Sameer", "Naveen", "Anwar", "Krishna", "Babu"];
   const LAST = ["Asif", "Kumar", "Thapa", "Thomas", "Rahman", "Babu", "Khan", "Pillai", "Shrestha", "Raj", "Hassan", "Gurung", "Yadav", "Nair", "Das", "Hussain", "Rai", "Singh", "Ali", "Varghese", "Tamang", "Sheikh", "Reddy", "Joshi"];

@@ -6,27 +6,32 @@
   let D = null;
 
   // ---------------- start / data ----------------
+  G.setAuthMode("admin");
+  let started = false;
   async function start() {
-    const u = G.session();
-    if (!u) return G.loginView(root, { title: "Management dashboard. Log in with your username and PIN.", after: afterLogin });
-    if (!u.manage) { location.href = "index.html"; return; }
-    await load();
-    window.addEventListener("hashchange", () => route().then(render));
+    await G.authReady();
+    if (G.isRecovering() || !(await G.hasSession())) return G.adminLoginView(root, { after: start });
+    try { await load(); }
+    catch (e) {
+      if (e.code === "not_admin") {
+        root.innerHTML = `<main class="login"><div class="card"><img src="assets/logo.png" alt="ABFM" class="login-logo"><h1>Grooming Control</h1><div class="bar-accent"></div>
+          <div class="flash err">${esc(e.message)}</div><button class="btn block" type="button" id="sign-out">Sign out</button></div></main>`;
+        root.querySelector("#sign-out").addEventListener("click", async () => { await G.logout(false); start(); });
+      }
+      return;
+    }
+    if (!started) { window.addEventListener("hashchange", () => route().then(render)); started = true; }
     await route();
     render();
-  }
-  function afterLogin(u) {
-    if (!u.manage) { location.href = "index.html"; return; }
-    start();
   }
   async function load(from) {
     G.busy(true);
     try {
       const out = await G.api("admin", from ? { from } : {});
       D = G.index(out);
-      localStorage.setItem("abfm_grooming_user", JSON.stringify(D.user));
+      G.rememberUser(D.user);
     } catch (e) {
-      root.innerHTML = `<div class="main"><div class="flash err">${esc(e.message)}</div><button class="btn" onclick="location.reload()">Try again</button> <button class="btn ghost" onclick="G.logout()">Log out</button></div>`;
+      if (e.code !== "not_admin") root.innerHTML = `<div class="main"><div class="flash err">${esc(e.message)}</div><button class="btn" onclick="location.reload()">Try again</button> <button class="btn ghost" onclick="G.logout()">Sign out</button></div>`;
       throw e;
     } finally { G.busy(false); }
   }
@@ -861,7 +866,7 @@
     if (!D.user.can.activity) return blocked("Activity log", "Only the Operations Control Officer, Director of Operations or HR can see the activity log.");
     const q = (R.q.q || "").toLowerCase();
     const list = (ACT || []).filter((x) => !q || `${x.user} ${x.action} ${x.details}`.toLowerCase().includes(q));
-    const LABEL = { saveCheck: "Saved a check", submitDay: "Sent daily checklist", addSupply: "Added supply request", issueSupply: "Marked supply issued", trained: "Marked training", createAudit: "Recorded audit", auditStep: "Audit follow-up step", addAction: "Added audit finding", toggleAction: "Closed / reopened action", saveSite: "Changed site", saveUser: "Changed user", changePin: "Changed PIN", saveEmployee: "Changed employee", importEmployees: "Imported staff", saveSettings: "Changed rules", addIncident: "Reported incident", updateIncident: "Updated incident", addDiscipline: "HR register entry", deleteDiscipline: "Deleted HR entry", saveBaseline: "Baseline check", testDigest: "Sent test email" };
+    const LABEL = { saveCheck: "Saved a check", submitDay: "Sent daily checklist", addSupply: "Added supply request", issueSupply: "Marked supply issued", trained: "Marked training", createAudit: "Recorded audit", auditStep: "Audit follow-up step", addAction: "Added audit finding", toggleAction: "Closed / reopened action", saveSite: "Changed site", saveUser: "Changed user", saveEmployee: "Changed employee", importEmployees: "Imported staff", saveSettings: "Changed rules", addIncident: "Reported incident", updateIncident: "Updated incident", addDiscipline: "HR register entry", deleteDiscipline: "Deleted HR entry", saveBaseline: "Baseline check", testDigest: "Sent test email" };
     return `
       ${head("Who did what, and when", "Activity log", `Latest ${(ACT || []).length} changes. Logins and page views are not logged.`,
         `<form id="act-filter" class="filters"><input type="search" name="q" value="${esc(R.q.q || "")}" placeholder="Search user, action, name"><button class="btn small navy" type="submit">Search</button></form><button class="btn small ghost" data-reload-act>${G.icon("refresh")}Refresh</button>`)}
@@ -872,44 +877,64 @@
 
   // ---------------- settings ----------------
   function settingsPage() {
-    if (!D.user.can.manageUsers) return head("Setup", "Settings") + empty("Only the Administrator, the Director of Operations or the OCO can manage sites, users and rules.") + pinForm();
-    const edit = D.users.find((x) => x.id === R.q.edit);
+    if (!D.user.can.manageUsers) return head("Setup", "Settings") + empty("Only the OCO and the Director of Operations can manage sites, users and rules.") + passwordForm();
     const sites = [...D.sites].sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
     return `
       ${head("Setup", "Sites, users & rules")}
       <div class="tabs"><a href="#/settings" class="${R.q.tab === "rules" ? "" : "on"}">Sites & users</a>${D.user.can.settings ? `<a href="#/settings?tab=rules" class="${R.q.tab === "rules" ? "on" : ""}">Rules & daily email</a>` : ""}</div>
       ${R.q.tab === "rules" && D.user.can.settings ? rulesForm() : `<div class="grid-half">
-        <div class="card pad panel"><h3>Users</h3><div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Role</th><th>Sites</th><th></th></tr></thead><tbody>
-          ${D.users.sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name)).map((x) => { const all = ["director", "oco", "hse", "hr", "stores", "admin", "camp_boss"].includes(x.role); return `<tr ${x.active ? "" : 'style="opacity:.5"'}>
-            <td><b>${esc(x.name)}</b><br><span class="muted small">${esc(x.username)}${x.email ? ` · ${esc(x.email)}` : ""}</span></td><td class="small">${esc(S.roleLabel(x.role))}</td>
-            <td class="small">${all ? `<span class="muted">All sites</span>` : x.sites.map(siteName).map(esc).join(", ") || `<span class="red">None</span>`}</td>
-            <td class="nw"><a class="linkbtn" href="#/settings?edit=${x.id}">Edit</a> · <button class="linkbtn" data-user-active="${x.id}" data-v="${x.active ? "" : "1"}">${x.active ? "Deactivate" : "Activate"}</button></td></tr>`; }).join("")}
-        </tbody></table></div>
-          <form id="user-form" class="mt" data-id="${edit ? edit.id : ""}">
-            <h3>${edit ? `Edit ${esc(edit.name)}` : "Add a user"}</h3>
-            <div class="grid-form">
-              <label class="field">Username<input type="text" name="username" value="${edit ? esc(edit.username) : ""}" ${edit ? "disabled" : "required"} autocapitalize="none"></label>
-              <label class="field">Full name<input type="text" name="name" value="${edit ? esc(edit.name) : ""}" required></label>
-              <label class="field">Role<select name="role">${S.ROLES.map((r) => `<option value="${r.code}" ${(edit ? edit.role : "supervisor") === r.code ? "selected" : ""}>${r.label}</option>`).join("")}</select></label>
-              <label class="field">${edit ? "New PIN (leave empty to keep)" : "PIN (4–8 digits)"}<input type="password" name="pin" inputmode="numeric" pattern="\\d{4,8}" ${edit ? "" : "required"}></label>
-              <label class="field">Email (optional, for the daily summary)<input type="email" name="email" value="${edit ? esc(edit.email || "") : ""}"></label>
-            </div>
-            <div class="field">Sites (for supervisors, camp bosses, site and FM managers)</div>
-            <div class="chips mb">${D.sites.filter((s) => s.active).map((s) => `<label class="chip" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" name="sites" value="${s.id}" ${edit && edit.sites.includes(s.id) ? "checked" : ""}> ${esc(s.name)}</label>`).join("")}</div>
-            <div class="row"><button class="btn small" type="submit">${edit ? "Save changes" : "Add user"}</button>${edit ? `<a class="btn small ghost" href="#/settings">Cancel</a>` : ""}</div>
-          </form>
-        </div>
+        <div>${usersPanel()}</div>
         <div>
           <div class="card pad panel mb"><h3>Sites</h3><table class="t"><thead><tr><th>Site</th><th>Staff</th><th></th></tr></thead><tbody>
             ${sites.map((s) => `<tr ${s.active ? "" : 'style="opacity:.5"'}><td><b>${esc(s.name)}</b>${s.active ? "" : `<span class="muted small"> (inactive)</span>`}</td><td>${staffOf(s.id).length}</td>
-              <td><button class="linkbtn" data-site-active="${s.id}" data-v="${s.active ? "" : "1"}">${s.active ? "Deactivate" : "Activate"}</button></td></tr>`).join("")}
+              <td><button class="linkbtn" data-site-active="${s.id}" data-v="${s.active ? "" : "1"}">${s.active ? "Deactivate" : "Activate"}</button></td></tr>`).join("") || `<tr><td colspan="3" class="muted">No sites yet. Add the first one below.</td></tr>`}
           </tbody></table>
             <form id="site-form" class="row mt"><input type="text" name="name" placeholder="New site name" required class="grow"><button class="btn small" type="submit">Add site</button></form>
             <p class="muted small mt">Staff are added under <a class="blue" href="#/employees">Employees</a>, one by one or by importing your Excel list.</p>
           </div>
-          ${pinForm()}
+          ${passwordForm()}
         </div>
       </div>`}`;
+  }
+  const ADMIN_ROLES = ["director", "hr", "stores", "fm_manager"];
+  const FIELD_ROLES = ["camp_boss", "hse", "supervisor", "site_manager"];
+  const ALL_SITES = ["director", "oco", "hse", "hr", "stores", "camp_boss"];
+  /** Checklist users sign in with their HR number; dashboard admins with email (only the OCO manages admins). */
+  function usersPanel() {
+    const sup = D.user.can.manageAdmins;
+    const edit = D.users.find((x) => x.id === R.q.edit);
+    const kind = edit ? (edit.admin ? "admin" : "field") : R.q.kind === "admin" && sup ? "admin" : "field";
+    const canEdit = (x) => sup || !x.admin;
+    const list = (admin) => D.users.filter((x) => !!x.admin === admin).sort((a, b) => Number(b.super) - Number(a.super) || Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
+    const rows = (admin) => list(admin).map((x) => `<tr ${x.active ? "" : 'style="opacity:.5"'}>
+            <td><b>${esc(x.name)}</b>${x.super ? ` <span class="pill blue">Super admin</span>` : ""}<br><span class="muted small">${admin ? esc(x.email) : `HR ${esc(x.username)}`}</span></td><td class="small">${esc(S.roleLabel(x.role))}</td>
+            <td class="small hide-m">${ALL_SITES.includes(x.role) ? `<span class="muted">All sites</span>` : x.sites.map(siteName).map(esc).join(", ") || `<span class="red">None</span>`}</td>
+            <td class="nw">${canEdit(x) && !x.super ? `<a class="linkbtn" href="#/settings?edit=${x.id}">Edit</a> · <button class="linkbtn" data-user-active="${x.id}" data-v="${x.active ? "" : "1"}">${x.active ? "Switch off" : "Switch on"}</button>` : x.super && sup ? `<a class="linkbtn" href="#/settings?edit=${x.id}">Edit</a>` : ""}</td></tr>`).join("");
+    const roles = kind === "admin" ? (edit && edit.super ? ["oco"] : ADMIN_ROLES) : FIELD_ROLES;
+    const cur = edit ? edit.role : roles[0];
+    return `<div class="card pad panel">
+        <h3>Checklist app users</h3>
+        <p class="small muted mb">They sign in to the checklist app with their HR number. No password.</p>
+        <div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Role</th><th class="hide-m">Sites</th><th></th></tr></thead><tbody>
+          ${rows(false) || `<tr><td colspan="4" class="muted">No users yet. Add the first one below.</td></tr>`}</tbody></table></div>
+        <h3 class="mt">Dashboard admins</h3>
+        <p class="small muted mb">They sign in to the dashboard with their email and a password they choose.${sup ? " Add their email here, then they use <b>Create an admin account</b> on the sign-in screen." : " Only the OCO can add or change admins."}</p>
+        <div class="table-wrap"><table class="t"><thead><tr><th>Name</th><th>Role</th><th class="hide-m">Sites</th><th></th></tr></thead><tbody>${rows(true)}</tbody></table></div>
+        ${edit && !canEdit(edit) ? "" : `<form id="user-form" class="mt" data-id="${edit ? edit.id : ""}" data-kind="${kind}">
+          <h3>${edit ? `Edit ${esc(edit.name)}` : kind === "admin" ? "Add a dashboard admin" : "Add a checklist app user"}</h3>
+          ${!edit && sup ? `<div class="tabs mb"><a href="#/settings" class="${kind === "field" ? "on" : ""}">Checklist app user</a><a href="#/settings?kind=admin" class="${kind === "admin" ? "on" : ""}">Dashboard admin</a></div>` : ""}
+          <div class="grid-form">
+            ${kind === "admin"
+              ? `<label class="field">Email<input type="email" name="email" value="${edit ? esc(edit.email) : ""}" ${edit && edit.super ? "disabled" : ""} required spellcheck="false"></label>`
+              : `<label class="field">HR number<input type="text" name="hr" value="${edit ? esc(edit.username) : ""}" required autocapitalize="characters" spellcheck="false"></label>`}
+            <label class="field">Full name<input type="text" name="name" value="${edit ? esc(edit.name) : ""}" required></label>
+            <label class="field">Role<select name="role" ${edit && edit.super ? "disabled" : ""}>${roles.map((r) => `<option value="${r}" ${cur === r ? "selected" : ""}>${esc(S.roleLabel(r))}</option>`).join("")}</select></label>
+          </div>
+          <div class="field">Sites (for supervisors, site managers and FM managers; the others see all sites)</div>
+          <div class="chips mb">${D.sites.filter((s) => s.active).map((s) => `<label class="chip" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" name="sites" value="${s.id}" ${edit && edit.sites.includes(s.id) ? "checked" : ""}> ${esc(s.name)}</label>`).join("") || `<span class="muted small">Add sites first.</span>`}</div>
+          <div class="row"><button class="btn small" type="submit">${edit ? "Save changes" : kind === "admin" ? "Add admin" : "Add user"}</button>${edit ? `<a class="btn small ghost" href="#/settings">Cancel</a>` : ""}</div>
+        </form>`}
+      </div>`;
   }
   function rulesForm() {
     const num = (k, label, hint, max = 365) => `<label class="field">${label}<input type="number" name="${k}" value="${esc(T[k])}" min="0" max="${max}" required>${hint ? `<span class="muted" style="font-weight:400">${hint}</span>` : ""}</label>`;
@@ -944,19 +969,19 @@
             <label class="field">Send at (hour, Dubai time)<select name="digestHour">${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${Number(T.digestHour) === h ? "selected" : ""}>${String(h).padStart(2, "0")}:00</option>`).join("")}</select></label>
             <label class="field">Dashboard link in the email<input type="text" name="dashboardUrl" value="${esc(dash)}"></label>
           </div>
-          <p class="small muted">First time only: in the Apps Script editor run <b>setupDailyEmail</b> once, so Google lets the script send email. Add email addresses to users on the Sites & users tab.</p>
+          <p class="small muted">Email sending isn't connected yet since the move to Supabase, so the summary isn't sent for now. It goes to dashboard admins' email addresses.</p>
           <button type="button" class="btn small ghost mt-s" data-test-email>Send a test summary to me${D.user.email ? ` (${esc(D.user.email)})` : ""}</button>
         </div>
       </div>
       <div class="row mt" style="justify-content:flex-end"><button class="btn" type="submit">Save rules</button></div>
     </form>`;
   }
-  function pinForm() {
-    return `<div class="card pad panel"><h3>Change my PIN</h3><form id="pin-form" class="grid-form">
-      <label class="field">Current PIN<input type="password" name="old" inputmode="numeric" required></label>
-      <label class="field">New PIN (4–8 digits)<input type="password" name="pin" inputmode="numeric" pattern="\\d{4,8}" required></label>
-      <div style="align-self:end;margin-bottom:12px"><button class="btn small" type="submit">Change PIN</button></div></form></div>`;
+  function passwordForm() {
+    return `<div class="card pad panel"><h3>Change my password</h3><p class="small muted mb">Signed in as ${esc(D.user.email)}</p><form id="pw-form" class="grid-form">
+      <label class="field">New password (at least 8 characters)<input type="password" name="pw" minlength="8" autocomplete="new-password" required></label>
+      <div style="align-self:end;margin-bottom:12px"><button class="btn small" type="submit">Change password</button></div></form></div>`;
   }
+
 
   // ---------------- events ----------------
   async function act(action, body, msg, after) {
@@ -1063,11 +1088,14 @@
       const rows = text.split(/\r?\n/).map(parseCsvLine).filter((r) => r.length >= 2);
       act("importEmployees", { rows }, (o) => `Import done: ${o.added} added, ${o.updated} updated${o.skipped ? `, ${o.skipped} skipped` : ""}.`);
     } else if (f.id === "user-form") {
-      act("saveUser", { id: f.dataset.id || undefined, username: d.username, name: d.name, role: d.role, pin: d.pin, email: d.email || "", sites: [].concat(d.sites || []) }, "Saved.", () => { location.hash = "#/settings"; render(); });
+      const body = { id: f.dataset.id || undefined, name: d.name, sites: [].concat(d.sites || []) };
+      if (d.role) body.role = d.role;
+      if (f.dataset.kind === "admin") { if (d.email !== undefined) body.email = d.email; } else body.hr = d.hr;
+      act("saveUser", body, "Saved.", () => { location.hash = "#/settings"; render(); });
     } else if (f.id === "site-form") act("saveSite", { name: d.name }, "Site added.");
-    else if (f.id === "pin-form") {
+    else if (f.id === "pin-form" || f.id === "pw-form") {
       G.busy(true);
-      try { await G.api("changePin", d); G.toast("PIN changed."); f.reset(); } catch (e) { G.toast(e.message, "err"); } finally { G.busy(false); }
+      try { await G.changePassword(d.pw); G.toast("Password changed."); f.reset(); } catch (e) { G.toast(e.message, "err"); } finally { G.busy(false); }
     }
   });
 

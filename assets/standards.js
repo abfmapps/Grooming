@@ -76,7 +76,6 @@ window.STD = (function () {
     { code: "hse", label: "HSE" },
     { code: "hr", label: "HR" },
     { code: "stores", label: "Stores / Procurement" },
-    { code: "admin", label: "Administrator" },
   ];
   return {
     AREAS, ITEMS, CHECK_TYPES, ACTIONS, TARGETS, ROLES, INCIDENT_TYPES, BASELINE_ITEMS, DISCIPLINE_LEVELS,
