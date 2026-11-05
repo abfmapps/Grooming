@@ -13,7 +13,8 @@
     self: "You can't deactivate your own account.", name: "Fill in the name.", item: "Choose or type an item.", finding: "Type the finding.",
     offline: "No connection. Check the signal and try again.", details: "Describe what happened.", setting: "One of the rules has an invalid value.",
     email: "That email address doesn't look right.", no_email: "Add your email address first (Sites & users → Users).", amount: "The amount must be a number.",
-    bad: "Something in the form isn't valid.", unknown: "Update the Google Apps Script to the latest version (README, step 1) to use this.", setup: "The app isn't connected to its Google Sheet yet. See README, step 2.",
+    bad: "Something in the form isn't valid.", unknown: "This needs a newer version of the backend. Refresh the page; if it keeps happening, tell the OCO.", setup: "The app isn't connected to its database yet. See README, step 1.",
+    no_mail: "Email isn't connected yet, so the daily summary can't be sent.",
   };
   async function api(action, body = {}) {
     if (!window.GROOMING_API) throw new Error(ERRORS.setup);

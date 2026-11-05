@@ -7,47 +7,19 @@ Two free apps for the **Al Bonian FM Grooming, Etiquette & Work Efficiency Polic
 
 Everyone logs in with a **username and PIN**. The app sends each person to the right place for their role; FM Managers can use both and only see their own sites.
 
-**Where the data lives:** in a private **Google Sheet** in your Google account, never in this repo. The pages only talk to a small Google Apps Script attached to that Sheet, which checks each person's PIN, role and sites. Check photos go to a private Google Drive folder.
+**Where the data lives:** in a **Supabase** database (project *Grooming App*), never in this repo. The pages only talk to one Edge Function, `api`, which checks each person's PIN, role and sites. The tables sit in a private `grooming` schema that the internet can't reach directly. Check photos are kept in a private Supabase Storage bucket.
 
 ---
 
-## 1. Connect the Google Sheet (one time, about 10 minutes)
+## 1. How it's connected
 
-1. Go to [sheets.new](https://sheets.new) and name the Sheet, e.g. **ABFM Grooming data**. Use a company Google account that will stay.
-2. **Extensions → Apps Script**. Delete everything in `Code.gs` and paste in the whole of [`setup/grooming-backend.gs`](setup/grooming-backend.gs).
-3. Near the top, change `ADMIN_PIN = "1234"` to your own PIN. Press 💾 Save.
-4. **Project Settings (⚙️)** → Time zone: **(GMT+04:00) Dubai**.
-5. **Deploy → New deployment** → ⚙️ *Select type* → **Web app**.
-   - Execute as: **Me**
-   - Who has access: **Anyone** (the script itself checks PINs)
-   - Press **Deploy** and allow the permissions (Sheets, and Drive for photos). If Google warns the app isn't verified: *Advanced → Go to … (unsafe)*. It's your own script.
-6. Copy the **Web app URL** (ends in `/exec`).
-7. In this repo on GitHub, open [`config.js`](config.js) → ✏️ Edit, paste the URL between the quotes:
-   ```js
-   window.GROOMING_API = "https://script.google.com/macros/s/…/exec";
-   ```
-   → **Commit changes**. The site updates within about a minute.
+- **Database:** `supabase/migrations/` creates the tables (one per area: sites, users, employees, checks, supply, submissions, audits, actions, incidents, discipline, activity, settings).
+- **Backend:** `supabase/functions/api/`. It runs the backend logic in [`setup/grooming-backend.gs`](setup/grooming-backend.gs) (the same file the local test server uses) on Postgres. After changing that file, run `node supabase/build.mjs` and deploy the `api` function again (with JWT verification off: the function checks PINs itself).
+- **App:** [`config.js`](config.js) holds the function's address.
 
-**Want to try it first with made-up data?** In the Apps Script editor choose **loadDemoData** in the function list at the top and press ▶ **Run**. It adds 6 sites, about 90 staff and 30 days of checks; every demo user's PIN is 1234 (e.g. `omar`, `faisal`, `oco`, `director`). To start again for real, delete the Sheet's tabs (keep one blank tab).
+The data was moved here from the original Google Sheet on 5 November 2026. The Sheet is no longer used and can be kept as an archive.
 
-**When you change the script later:** Deploy → Manage deployments → ✏️ → Version: **New version** → Deploy. This keeps the same URL.
-
-### Updating to a new version of the script
-
-When this repo's `setup/grooming-backend.gs` changes (the dashboard shows an orange **Update needed** notice):
-1. Open the Sheet → **Extensions → Apps Script**.
-2. Select everything in `Code.gs`, delete it, and paste in the new [`setup/grooming-backend.gs`](setup/grooming-backend.gs). Put your own `ADMIN_PIN` back (it only matters for a brand-new Sheet).
-3. 💾 Save, then **Deploy → Manage deployments → ✏️ → Version: New version → Deploy**. The URL stays the same, so `config.js` doesn't change.
-
-Your data is safe: new columns and tabs are added to the Sheet automatically.
-
-### Daily email summary (optional)
-
-1. In the Apps Script editor choose **setupDailyEmail** in the function list and press ▶ **Run** once. Allow the email permission.
-2. In the dashboard: **Sites, users & rules → Users**, add an email address to each manager who should get it.
-3. **Sites, users & rules → Rules & daily email**: choose the hour and press **Send a test summary to me**.
-
-Each evening every manager login with an email gets a summary for their own sites: checklists not sent or sent late, overdue audit actions, failing sites, serious incidents and slow supply. Quiet days send nothing.
+**Daily email summary:** not available yet since the move (Supabase doesn't send email on its own). The rest of the app is unaffected.
 
 ## 2. Set up your people
 
@@ -95,10 +67,10 @@ The checklist items are in [`assets/standards.js`](assets/standards.js). After e
 
 ## Good to know
 
-- **Speed:** each save goes to Google, so it takes 1–2 seconds. Fine for hundreds of staff.
-- **Size:** the dashboard loads the last 100 days and loads older data when you open an older month. After a year or two of daily checks you can copy old rows from the *Checks* tab to an archive Sheet to keep it fast.
-- **Logins** last 14 days on a phone. Six wrong PINs lock that username for 10 minutes. Every change is written to the **Activity** tab.
-- **Back-ups:** it's a normal Google Sheet: *File → Version history*, or download a copy.
+- **Speed:** each save takes well under a second.
+- **Size:** the dashboard loads the last 100 days and loads older data when you open an older month.
+- **Logins** last 14 days on a phone. Six wrong PINs lock that username for 10 minutes. Every change is written to the activity log.
+- **Back-ups:** Supabase backs up the database daily; the dashboard's **Reports & exports** also download every table as CSV.
 - **Needs a signal:** checks are saved online; there's no offline mode yet.
 - Deduction amounts are set by HR under **Rules** (the policy leaves them to HR under labour law) and recorded per case in the HR register.
 
@@ -114,13 +86,14 @@ Then open http://localhost:8080 (PIN 1234 for every demo user). `dev/` holds thi
 ```
 index.html                 checklist app
 admin.html                 management dashboard
-config.js                  your Apps Script URL (step 1.7)
+config.js                  address of the Supabase backend
 assets/standards.js        what is checked, targets and the warning ladder
 assets/core.js             shared code: login, backend calls, dashboard calculations
 assets/field.js            checklist app screens
 assets/admin.js            dashboard screens
 assets/app.css             styles
-setup/grooming-backend.gs  the Google Apps Script (paste into the Sheet)
+setup/grooming-backend.gs  backend logic (runs in the Supabase Edge Function and the local test server)
+supabase/                  database tables, Edge Function, build script
 sw.js, manifest.webmanifest  install-as-app support
 dev/                       local test server
 docs/mockups/              the original design mockups

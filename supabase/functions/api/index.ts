@@ -10,7 +10,7 @@ import crypto from "node:crypto";
 import { Buffer } from "node:buffer";
 import { create } from "./backend.js";
 
-const sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { max: 4, prepare: false, idle_timeout: 20 });
+const sql = postgres(Deno.env.get("SUPABASE_DB_URL")!, { max: Number(Deno.env.get("DB_POOL") || 4), prepare: false, idle_timeout: 20 });
 const SB_URL = Deno.env.get("SUPABASE_URL")!;
 const SB_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const BUCKET = "grooming-photos";
