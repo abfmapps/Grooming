@@ -212,6 +212,23 @@ function services(store: Store) {
 async function admin(b: any) {
   const [k] = await sql`select value from grooming.props where key = 'IMPORT_KEY'`;
   if (!k || !b.key || String(b.key) !== k.value) return { ok: false, error: "login" };
+  if (b.fn === "wipePhotos") {
+    // Delete every check photo (used when clearing all data). Storage files can't be deleted from SQL.
+    let n = 0;
+    for (;;) {
+      const list = await fetch(`${SB_URL}/storage/v1/object/list/${BUCKET}`, {
+        method: "POST", headers: { Authorization: `Bearer ${SB_KEY}`, apikey: SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ prefix: "", limit: 100 }),
+      }).then((r) => r.json());
+      const names = (Array.isArray(list) ? list : []).map((o: any) => o.name).filter(Boolean);
+      if (!names.length) break;
+      const r = await fetch(`${SB_URL}/storage/v1/object/${BUCKET}`, {
+        method: "DELETE", headers: { Authorization: `Bearer ${SB_KEY}`, apikey: SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ prefixes: names }),
+      });
+      if (!r.ok) return { ok: false, error: "error", detail: (await r.text()).slice(0, 200) };
+      n += names.length;
+    }
+    return { ok: true, deleted: n };
+  }
   if (b.fn === "importPhoto") {
     const m = String(b.data || "").match(/^data:(image\/\w+);base64,(.*)$/);
     if (!m || !/^[\w-]{6,80}$/.test(String(b.id || ""))) return { ok: false, error: "bad" };
@@ -254,7 +271,7 @@ Deno.serve(async (req) => {
   delete b._email; delete b._ip;
   b._ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
   try {
-    if (fn === "import" || fn === "importPhoto" || fn === "loadDemo") return reply(await admin(b));
+    if (fn === "import" || fn === "importPhoto" || fn === "loadDemo" || fn === "wipePhotos") return reply(await admin(b));
     // Dashboard admins send their Supabase sign-in (a JWT). Check it with Supabase Auth and pass on the confirmed email.
     if (/^eyJ[\w-]+\.[\w-]+\.[\w-]+$/.test(String(b.token || ""))) {
       const r = await fetch(`${SB_URL}/auth/v1/user`, { headers: { Authorization: `Bearer ${b.token}`, apikey: SB_KEY } });
