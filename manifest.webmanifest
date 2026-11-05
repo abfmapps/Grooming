@@ -3,7 +3,7 @@
   "short_name": "ABFM Grooming",
   "description": "Daily grooming, etiquette and work standards checklist for Al Bonian FM.",
   "start_url": "./index.html",
-  "scope": "./",
+  "scope": "./index.html",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#f5f5f3",

@@ -6,6 +6,10 @@
   <title>ABFM Grooming</title>
   <meta name="description" content="Al Bonian FM daily grooming, etiquette and work standards checklist.">
   <meta name="theme-color" content="#ffffff">
+  <script>
+    // The checklist app's install area is index.html only, so the dashboard (admin.html) installs as its own app.
+    if (/\/$/.test(location.pathname)) history.replaceState(null, "", "index.html" + location.search + location.hash);
+  </script>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/favicon.png">
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">

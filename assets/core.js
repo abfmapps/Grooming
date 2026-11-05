@@ -658,7 +658,7 @@
   }
 
   window.G = {
-    version: "14", api, logout, loginHr, hasSession, cachedUser, rememberUser, authReady, adminLoginView, changePassword,
+    version: "15", api, logout, loginHr, hasSession, cachedUser, rememberUser, authReady, adminLoginView, changePassword,
     setAuthMode: (m) => { authMode = m; }, isRecovering: () => recovering, esc, nowHM, ordinal, icon, siteChecklist, installButton, initials, addDays, daysBetween, workingDaysBetween, todayLocal, fmtDate, fmtDay, pct, plural,
     toast, busy, formData, shrinkPhoto, loginView,
     findingsFor, index, siteAudits, openActions, supplyAge, fieldLast7, overview, controlEvidence, monthlyReport, periodReport,
